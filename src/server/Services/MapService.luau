@@ -87,4 +87,19 @@ function MapService.GetBase(): BasePart?
 	return basePart
 end
 
+function MapService.GetRoute(): { Vector3 }?
+	if not MapService.IsLoaded() then
+		return nil
+	end
+
+	return table.clone(routePoints)
+end
+
+function MapService.Unload()
+	mapDataFolder = nil
+	spawnPart = nil
+	basePart = nil
+	routePoints = {}
+end
+
 return MapService
