@@ -1,0 +1,8 @@
+--!strict
+
+return {
+	DefaultSpeed = 1,
+	AllowedSpeeds = { 1, 2, 3 },
+	FixedStep = 1 / 30,
+	MaximumStepsPerFrame = 8,
+}
