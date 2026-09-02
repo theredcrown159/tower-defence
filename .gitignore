@@ -1,0 +1,13 @@
+# Roblox place and model files
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# Generated tooling files
+sourcemap.json
+roblox.yml
+
+# OS and editor files
+.DS_Store
+Thumbs.db
