@@ -109,4 +109,8 @@ function Enemy.GetReward(self: Enemy): number
 	return self._definition.Reward
 end
 
+function Enemy.GetModelName(self: Enemy): string
+	return self._definition.ModelName
+end
+
 return Enemy

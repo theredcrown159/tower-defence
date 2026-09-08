@@ -86,7 +86,7 @@ function EnemyService.Spawn(enemyName: string): number
 	local enemyId = nextEnemyId
 
 	activeEnemies[enemyId] = enemy
-	enemySpawnedEvent:Fire(enemyId, enemyName, enemy)
+	enemySpawnedEvent:Fire(enemyId, enemyName)
 
 	return enemyId
 end
