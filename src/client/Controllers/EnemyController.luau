@@ -14,9 +14,16 @@ local enemyModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Enemi
 local EnemyController = {}
 local started = false
 
+type EnemyPositionSnapshot = {
+	Id: number,
+	Position: Vector3,
+}
+
 local enemies: { [number]: Model } = {}
 
 local SNAPSHOT_INTERVAL = 0.1
+local TURN_SPEED = 12
+local MIN_DIRECTION_MAGNITUDE = 0.001
 
 local previousPositions: { [number]: Vector3 } = {}
 local targetPositions: { [number]: Vector3 } = {}
@@ -47,8 +54,10 @@ local function onEnemyRemoved(id: number, _reason: string)
 	interpolationTimes[id] = nil
 end
 
-local function onEnemiesUpdated(positions: { [number]: Vector3 })
-	for id, position in positions do
+local function onEnemiesUpdated(positions: { EnemyPositionSnapshot })
+	for _, snapshot in ipairs(positions) do
+		local id = snapshot.Id
+		local position = snapshot.Position
 		local model = enemies[id]
 
 		if not model then
@@ -78,6 +87,15 @@ local function onRenderStep(deltaTime: number)
 		local alpha = interpolationTime / SNAPSHOT_INTERVAL
 		local position = previousPosition:Lerp(targetPosition, alpha)
 		local rotation = model:GetPivot().Rotation
+		local movement = targetPosition - previousPosition
+		local flatDirection = Vector3.new(movement.X, 0, movement.Z)
+
+		if flatDirection.Magnitude > MIN_DIRECTION_MAGNITUDE then
+			local targetRotation = CFrame.lookAt(Vector3.zero, flatDirection.Unit)
+			local turnAlpha = 1 - math.exp(-TURN_SPEED * deltaTime)
+
+			rotation = rotation:Lerp(targetRotation, turnAlpha)
+		end
 
 		model:PivotTo(CFrame.new(position) * rotation)
 	end

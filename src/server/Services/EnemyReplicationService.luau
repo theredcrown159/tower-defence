@@ -8,6 +8,10 @@ local Enemy = require(script.Parent.Parent.Domain.Enemies.Enemy)
 local EnemyService = require(script.Parent.EnemyService)
 
 type EnemyType = Enemy.Enemy
+type EnemyPositionSnapshot = {
+	Id: number,
+	Position: Vector3,
+}
 
 local enemyRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Enemies")
 local spawnedEvent = enemyRemotes:WaitForChild("Spawned")
@@ -80,14 +84,17 @@ local function onEnemyRemoved(id: number, _enemy: EnemyType, reason: EnemyServic
 end
 
 local function sendPositions()
-	local positions: { [number]: Vector3 } = {}
+	local positions: { EnemyPositionSnapshot } = {}
 
 	local enemies = EnemyService.GetAll()
 	for id, enemy in pairs(enemies) do
 		if enemy:IsDead() or enemy:HasReachedBase() then
 			continue
 		end
-		positions[id] = enemy:GetPosition()
+		table.insert(positions, {
+			Id = id,
+			Position = enemy:GetPosition(),
+		})
 	end
 
 	for player, _ in pairs(readyPlayers) do
