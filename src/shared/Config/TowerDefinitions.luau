@@ -10,9 +10,9 @@ export type TowerDefinition = {
 }
 
 local TowerDefinitions: { [string]: TowerDefinition } = {
-	Basic = {
-		ModelName = "Basic",
-		Damage = 25,
+	Classical = {
+		ModelName = "Classical",
+		Damage = 100,
 		Range = 18,
 		AttackCooldown = 1,
 		Cost = 100,

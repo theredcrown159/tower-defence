@@ -101,6 +101,10 @@ local function onRenderStep(deltaTime: number)
 	end
 end
 
+function EnemyController.GetModel(id: number): Model?
+	return enemies[id]
+end
+
 function EnemyController.Start(): boolean
 	if started then
 		return false
