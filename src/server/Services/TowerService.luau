@@ -1,0 +1,185 @@
+--!strict
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local EnemyService = require(script.Parent.EnemyService)
+local SimulationService = require(script.Parent.SimulationService)
+local Tower = require(script.Parent.Parent.Domain.Towers.Tower)
+local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinitions)
+
+type TowerType = Tower.Tower
+
+local TowerService = {}
+
+local towerPlacedEvent = Instance.new("BindableEvent")
+TowerService.TowerPlaced = towerPlacedEvent.Event
+
+local towerRemovedEvent = Instance.new("BindableEvent")
+TowerService.TowerRemoved = towerRemovedEvent.Event
+
+local towerAttackedEvent = Instance.new("BindableEvent")
+TowerService.TowerAttacked = towerAttackedEvent.Event
+
+local activeTowers: { [number]: TowerType } = {}
+local nextTowerId = 0
+local simulationConnection: RBXScriptConnection? = nil
+
+local function isEnemyInRange(tower: TowerType, enemyPosition: Vector3): boolean
+	local towerPosition = tower:GetPosition()
+	local offsetX = enemyPosition.X - towerPosition.X
+	local offsetZ = enemyPosition.Z - towerPosition.Z
+	local distanceSquared = offsetX * offsetX + offsetZ * offsetZ
+	local range = tower:GetRange()
+
+	return distanceSquared <= range * range
+end
+
+local function findFirstTarget(tower: TowerType): number?
+	local targetId: number? = nil
+	local targetDistanceTraveled = -math.huge
+
+	for enemyId, enemy in EnemyService.GetAll() do
+		if enemy:IsDead() or enemy:HasReachedBase() then
+			continue
+		end
+
+		if not isEnemyInRange(tower, enemy:GetPosition()) then
+			continue
+		end
+
+		local distanceTraveled = enemy:GetDistanceTraveled()
+
+		if distanceTraveled > targetDistanceTraveled then
+			targetId = enemyId
+			targetDistanceTraveled = distanceTraveled
+		elseif distanceTraveled == targetDistanceTraveled and targetId and enemyId < targetId then
+			targetId = enemyId
+		end
+	end
+
+	return targetId
+end
+
+local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
+	for towerId, tower in activeTowers do
+		tower:Step(fixedDeltaTime)
+
+		if not tower:CanAttack() then
+			continue
+		end
+
+		local targetId = findFirstTarget(tower)
+
+		if not targetId then
+			continue
+		end
+
+		local damage = tower:GetDamage()
+		EnemyService.DamageEnemy(targetId, damage)
+		tower:TriggerAttack()
+		towerAttackedEvent:Fire(towerId, targetId, damage)
+	end
+end
+
+function TowerService.Place(towerName: string, position: Vector3, ownerUserId: number): number
+	local definition = TowerDefinitions[towerName]
+
+	if not definition then
+		error(`Tower with name "{towerName}" not found`)
+	end
+
+	local tower = Tower.new(definition, position, ownerUserId)
+
+	nextTowerId += 1
+	local towerId = nextTowerId
+
+	activeTowers[towerId] = tower
+	towerPlacedEvent:Fire(towerId, towerName, position, ownerUserId)
+
+	return towerId
+end
+
+function TowerService.GetById(id: number): TowerType?
+	return activeTowers[id]
+end
+
+function TowerService.GetAll(): { [number]: TowerType }
+	return table.clone(activeTowers)
+end
+
+function TowerService.GetCount(): number
+	local count = 0
+
+	for _ in activeTowers do
+		count += 1
+	end
+
+	return count
+end
+
+function TowerService.Remove(id: number): boolean
+	if not activeTowers[id] then
+		return false
+	end
+
+	activeTowers[id] = nil
+	towerRemovedEvent:Fire(id)
+
+	return true
+end
+
+function TowerService.Clear(): number
+	local ids: { number } = {}
+
+	for id in activeTowers do
+		table.insert(ids, id)
+	end
+
+	for _, id in ids do
+		TowerService.Remove(id)
+	end
+
+	return #ids
+end
+
+function TowerService.IsRunning(): boolean
+	return simulationConnection ~= nil
+end
+
+function TowerService.Start(): boolean
+	if simulationConnection then
+		return false
+	end
+
+	if not EnemyService.IsRunning() then
+		error("TowerService cannot start before EnemyService")
+	end
+
+	simulationConnection = SimulationService.Stepped:Connect(onSimulationStep)
+
+	return true
+end
+
+function TowerService.Stop(): boolean
+	if not simulationConnection then
+		return false
+	end
+
+	simulationConnection:Disconnect()
+	simulationConnection = nil
+
+	return true
+end
+
+function TowerService.Reset(): boolean
+	if simulationConnection then
+		return false
+	end
+
+	TowerService.Clear()
+	nextTowerId = 0
+
+	return true
+end
+
+return TowerService
