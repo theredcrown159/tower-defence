@@ -3,6 +3,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local NetworkConfig = require(ReplicatedStorage.Shared.Config.NetworkConfig)
 
 local Enemy = require(script.Parent.Parent.Domain.Enemies.Enemy)
 local EnemyService = require(script.Parent.EnemyService)
@@ -25,11 +28,11 @@ local readyPlayers: { [Player]: boolean } = {}
 local connections: { RBXScriptConnection } = {}
 local started: boolean = false
 
-local SEND_INTERVAL = 0.1
+local SEND_INTERVAL = NetworkConfig.EnemySnapshotInterval
 local sendAccumulator = 0
 
 local function sendEnemyToPlayer(player: Player, id: number, enemy: EnemyType)
-	spawnedEvent:FireClient(player, id, enemy:GetModelName(), enemy:GetPosition())
+	spawnedEvent:FireClient(player, id, enemy:GetModelName(), enemy:GetPosition(), Workspace:GetServerTimeNow())
 end
 
 local function onPlayerReady(player: Player)
@@ -84,6 +87,7 @@ local function onEnemyRemoved(id: number, reason: EnemyService.RemovalReason, _b
 end
 
 local function sendPositions()
+	local timestamp = Workspace:GetServerTimeNow()
 	local positions: { EnemyPositionSnapshot } = {}
 
 	local enemies = EnemyService.GetAll()
@@ -103,7 +107,7 @@ local function sendPositions()
 			continue
 		end
 
-		updatedEvent:FireClient(player, positions)
+		updatedEvent:FireClient(player, positions, timestamp)
 	end
 end
 
