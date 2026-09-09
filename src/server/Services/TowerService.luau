@@ -2,6 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Enemy = require(script.Parent.Parent.Domain.Enemies.Enemy)
 local EnemyService = require(script.Parent.EnemyService)
 local SimulationService = require(script.Parent.SimulationService)
 local Tower = require(script.Parent.Parent.Domain.Towers.Tower)
@@ -20,8 +21,13 @@ TowerService.TowerRemoved = towerRemovedEvent.Event
 local towerAttackedEvent = Instance.new("BindableEvent")
 TowerService.TowerAttacked = towerAttackedEvent.Event
 
+local towerTargetChangedEvent = Instance.new("BindableEvent")
+TowerService.TowerTargetChanged = towerTargetChangedEvent.Event
+
 local activeTowers: { [number]: TowerType } = {}
+local activeTargets: { [number]: number } = {}
 local nextTowerId = 0
+local nextAttackSequence = 0
 local simulationConnection: RBXScriptConnection? = nil
 
 local function isEnemyInRange(tower: TowerType, enemyPosition: Vector3): boolean
@@ -34,11 +40,11 @@ local function isEnemyInRange(tower: TowerType, enemyPosition: Vector3): boolean
 	return distanceSquared <= range * range
 end
 
-local function findFirstTarget(tower: TowerType): number?
+local function findFirstTarget(tower: TowerType, enemies: { [number]: Enemy.Enemy }): number?
 	local targetId: number? = nil
 	local targetDistanceTraveled = -math.huge
 
-	for enemyId, enemy in EnemyService.GetAll() do
+	for enemyId, enemy in enemies do
 		if enemy:IsDead() or enemy:HasReachedBase() then
 			continue
 		end
@@ -60,24 +66,42 @@ local function findFirstTarget(tower: TowerType): number?
 	return targetId
 end
 
+local function setTarget(towerId: number, targetId: number?)
+	if activeTargets[towerId] == targetId then
+		return
+	end
+
+	activeTargets[towerId] = targetId
+	towerTargetChangedEvent:Fire(towerId, targetId or 0)
+end
+
 local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
+	local enemies = EnemyService.GetAll()
+
 	for towerId, tower in activeTowers do
 		tower:Step(fixedDeltaTime)
+		local targetId = findFirstTarget(tower, enemies)
+		setTarget(towerId, targetId)
 
-		if not tower:CanAttack() then
-			continue
-		end
-
-		local targetId = findFirstTarget(tower)
-
-		if not targetId then
+		if not targetId or not tower:CanAttack() then
 			continue
 		end
 
 		local damage = tower:GetDamage()
-		EnemyService.DamageEnemy(targetId, damage)
+		local result = EnemyService.DamageEnemy(targetId, damage)
+
+		if not result then
+			setTarget(towerId, nil)
+			continue
+		end
+
 		tower:TriggerAttack()
-		towerAttackedEvent:Fire(towerId, targetId, damage)
+		nextAttackSequence += 1
+		towerAttackedEvent:Fire(nextAttackSequence, towerId, targetId, damage, result.HealthAfter, result.Killed)
+
+		if result.Killed then
+			setTarget(towerId, nil)
+		end
 	end
 end
 
@@ -107,6 +131,10 @@ function TowerService.GetAll(): { [number]: TowerType }
 	return table.clone(activeTowers)
 end
 
+function TowerService.GetTargetId(id: number): number?
+	return activeTargets[id]
+end
+
 function TowerService.GetCount(): number
 	local count = 0
 
@@ -122,6 +150,7 @@ function TowerService.Remove(id: number): boolean
 		return false
 	end
 
+	setTarget(id, nil)
 	activeTowers[id] = nil
 	towerRemovedEvent:Fire(id)
 

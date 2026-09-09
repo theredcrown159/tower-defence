@@ -2,6 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local enemyRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Enemies")
 local spawnedEvent = enemyRemotes:WaitForChild("Spawned")
@@ -11,83 +12,159 @@ local updatedEvent = enemyRemotes:WaitForChild("Updated")
 
 local enemyModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Enemies")
 
+local NetworkConfig = require(ReplicatedStorage.Shared.Config.NetworkConfig)
+local PositionBuffer = require(script.Parent.Parent.Util.PositionBuffer)
+
 local EnemyController = {}
-local started = false
 
 type EnemyPositionSnapshot = {
 	Id: number,
 	Position: Vector3,
 }
 
-local enemies: { [number]: Model } = {}
+type FadePart = {
+	Part: BasePart,
+	InitialTransparency: number,
+}
 
-local SNAPSHOT_INTERVAL = 0.1
+type DeathAnimation = {
+	Elapsed: number,
+	Parts: { FadePart },
+}
+
+local enemies: { [number]: Model } = {}
+local positionBuffers: { [number]: PositionBuffer.Buffer } = {}
+local deathAnimations: { [number]: DeathAnimation } = {}
+local connections: { RBXScriptConnection } = {}
+local started = false
+
+local DEATH_DURATION = 0.25
 local TURN_SPEED = 12
 local MIN_DIRECTION_MAGNITUDE = 0.001
 
-local previousPositions: { [number]: Vector3 } = {}
-local targetPositions: { [number]: Vector3 } = {}
-local interpolationTimes: { [number]: number } = {}
+local function getVisualsFolder(): Folder
+	local existing = Workspace:FindFirstChild("EnemyVisuals")
 
-local function onEnemySpawned(id: number, modelName: string, position: Vector3)
-	local model = enemyModels:FindFirstChild(modelName):Clone()
-	model:PivotTo(CFrame.new(position))
-	model.Parent = game.Workspace.EnemyVisuals
+	if existing then
+		if not existing:IsA("Folder") then
+			error("Workspace.EnemyVisuals must be a Folder")
+		end
 
-	previousPositions[id] = position
-	targetPositions[id] = position
-	interpolationTimes[id] = SNAPSHOT_INTERVAL
+		return existing
+	end
 
-	enemies[id] = model
-	targetPositions[id] = position
+	local folder = Instance.new("Folder")
+	folder.Name = "EnemyVisuals"
+	folder.Parent = Workspace
+
+	return folder
 end
 
-local function onEnemyRemoved(id: number, _reason: string)
+local function destroyEnemyVisual(id: number)
 	local model = enemies[id]
+
 	if model then
 		model:Destroy()
 	end
 
 	enemies[id] = nil
-	previousPositions[id] = nil
-	targetPositions[id] = nil
-	interpolationTimes[id] = nil
+	positionBuffers[id] = nil
+	deathAnimations[id] = nil
 end
 
-local function onEnemiesUpdated(positions: { EnemyPositionSnapshot })
+local function beginDeath(id: number): boolean
+	local model = enemies[id]
+
+	if not model or deathAnimations[id] then
+		return false
+	end
+
+	local parts: { FadePart } = {}
+
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.CanQuery = false
+			table.insert(parts, {
+				Part = descendant,
+				InitialTransparency = descendant.Transparency,
+			})
+		end
+	end
+
+	deathAnimations[id] = {
+		Elapsed = 0,
+		Parts = parts,
+	}
+
+	return true
+end
+
+local function onEnemySpawned(id: number, modelName: string, position: Vector3, timestamp: number)
+	local template = enemyModels:FindFirstChild(modelName)
+
+	if not template or not template:IsA("Model") then
+		warn(`Enemy model "{modelName}" not found`)
+		return
+	end
+
+	destroyEnemyVisual(id)
+
+	local model = template:Clone()
+	model:PivotTo(CFrame.new(position))
+	model.Parent = getVisualsFolder()
+
+	local buffer: PositionBuffer.Buffer = {}
+	PositionBuffer.Push(buffer, timestamp, position)
+	positionBuffers[id] = buffer
+	enemies[id] = model
+end
+
+local function onEnemyRemoved(id: number, reason: string)
+	if reason == "Dead" then
+		beginDeath(id)
+		return
+	end
+
+	destroyEnemyVisual(id)
+end
+
+local function onEnemiesUpdated(positions: { EnemyPositionSnapshot }, timestamp: number)
 	for _, snapshot in ipairs(positions) do
 		local id = snapshot.Id
-		local position = snapshot.Position
 		local model = enemies[id]
 
-		if not model then
+		if not model or deathAnimations[id] then
 			continue
 		end
 
-		previousPositions[id] = model:GetPivot().Position
-		targetPositions[id] = position
-		interpolationTimes[id] = 0
+		local buffer = positionBuffers[id]
+		if buffer then
+			PositionBuffer.Push(buffer, timestamp, snapshot.Position)
+		end
 	end
 end
 
-local function onRenderStep(deltaTime: number)
-	for id, model in enemies do
-		local previousPosition = previousPositions[id]
-		local targetPosition = targetPositions[id]
-		local interpolationTime = interpolationTimes[id]
+local function updateMovement(deltaTime: number)
+	local renderTime = Workspace:GetServerTimeNow() - NetworkConfig.EnemyInterpolationDelay
 
-		if not previousPosition or not targetPosition or interpolationTime == nil then
+	for id, model in enemies do
+		if deathAnimations[id] then
 			continue
 		end
 
-		interpolationTime = math.min(interpolationTime + deltaTime, SNAPSHOT_INTERVAL)
+		local buffer = positionBuffers[id]
+		if not buffer then
+			continue
+		end
 
-		interpolationTimes[id] = interpolationTime
+		local position = PositionBuffer.Sample(buffer, renderTime)
+		if not position then
+			continue
+		end
 
-		local alpha = interpolationTime / SNAPSHOT_INTERVAL
-		local position = previousPosition:Lerp(targetPosition, alpha)
-		local rotation = model:GetPivot().Rotation
-		local movement = targetPosition - previousPosition
+		local pivot = model:GetPivot()
+		local rotation = pivot.Rotation
+		local movement = position - pivot.Position
 		local flatDirection = Vector3.new(movement.X, 0, movement.Z)
 
 		if flatDirection.Magnitude > MIN_DIRECTION_MAGNITUDE then
@@ -101,8 +178,40 @@ local function onRenderStep(deltaTime: number)
 	end
 end
 
+local function updateDeaths(deltaTime: number)
+	local completed: { number } = {}
+
+	for id, animation in deathAnimations do
+		animation.Elapsed = math.min(animation.Elapsed + deltaTime, DEATH_DURATION)
+		local alpha = animation.Elapsed / DEATH_DURATION
+
+		for _, fadePart in animation.Parts do
+			if fadePart.Part.Parent then
+				fadePart.Part.Transparency = fadePart.InitialTransparency + (1 - fadePart.InitialTransparency) * alpha
+			end
+		end
+
+		if animation.Elapsed >= DEATH_DURATION then
+			table.insert(completed, id)
+		end
+	end
+
+	for _, id in completed do
+		destroyEnemyVisual(id)
+	end
+end
+
+local function onRenderStep(deltaTime: number)
+	updateMovement(deltaTime)
+	updateDeaths(deltaTime)
+end
+
 function EnemyController.GetModel(id: number): Model?
 	return enemies[id]
+end
+
+function EnemyController.BeginDeath(id: number): boolean
+	return beginDeath(id)
 end
 
 function EnemyController.Start(): boolean
@@ -110,14 +219,37 @@ function EnemyController.Start(): boolean
 		return false
 	end
 
-	spawnedEvent.OnClientEvent:Connect(onEnemySpawned)
-	removedEvent.OnClientEvent:Connect(onEnemyRemoved)
-	updatedEvent.OnClientEvent:Connect(onEnemiesUpdated)
-
-	RunService.RenderStepped:Connect(onRenderStep)
+	table.insert(connections, spawnedEvent.OnClientEvent:Connect(onEnemySpawned))
+	table.insert(connections, removedEvent.OnClientEvent:Connect(onEnemyRemoved))
+	table.insert(connections, updatedEvent.OnClientEvent:Connect(onEnemiesUpdated))
+	table.insert(connections, RunService.RenderStepped:Connect(onRenderStep))
 	started = true
 
 	readyEvent:FireServer()
+
+	return true
+end
+
+function EnemyController.Stop(): boolean
+	if not started then
+		return false
+	end
+
+	for _, connection in connections do
+		connection:Disconnect()
+	end
+
+	local ids: { number } = {}
+	for id in enemies do
+		table.insert(ids, id)
+	end
+
+	for _, id in ids do
+		destroyEnemyVisual(id)
+	end
+
+	table.clear(connections)
+	started = false
 
 	return true
 end

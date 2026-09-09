@@ -11,7 +11,7 @@ type TowerType = Tower.Tower
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
 local placedEvent = towerRemotes:WaitForChild("Placed")
 local removedEvent = towerRemotes:WaitForChild("Removed")
-local attackedEvent = towerRemotes:WaitForChild("Attacked")
+local combatEvent = towerRemotes:WaitForChild("Attacked")
 local readyEvent = towerRemotes:WaitForChild("Ready")
 
 local TowerReplicationService = {}
@@ -22,6 +22,15 @@ local started = false
 
 local function sendTowerToPlayer(player: Player, id: number, tower: TowerType)
 	placedEvent:FireClient(player, id, tower:GetModelName(), tower:GetPosition(), tower:GetOwnerUserId())
+
+	local targetId = TowerService.GetTargetId(id)
+	if targetId then
+		combatEvent:FireClient(player, {
+			Kind = "TargetChanged",
+			TowerId = id,
+			TargetId = targetId,
+		})
+	end
 end
 
 local function onPlayerReady(player: Player)
@@ -56,10 +65,37 @@ local function onTowerRemoved(id: number)
 	end
 end
 
-local function onTowerAttacked(towerId: number, targetId: number, damage: number)
+local function onTowerTargetChanged(towerId: number, targetId: number)
 	for player in readyPlayers do
 		if player:IsDescendantOf(Players) then
-			attackedEvent:FireClient(player, towerId, targetId, damage)
+			combatEvent:FireClient(player, {
+				Kind = "TargetChanged",
+				TowerId = towerId,
+				TargetId = targetId,
+			})
+		end
+	end
+end
+
+local function onTowerAttacked(
+	sequence: number,
+	towerId: number,
+	targetId: number,
+	damage: number,
+	healthAfter: number,
+	killed: boolean
+)
+	for player in readyPlayers do
+		if player:IsDescendantOf(Players) then
+			combatEvent:FireClient(player, {
+				Kind = "Attack",
+				Sequence = sequence,
+				TowerId = towerId,
+				TargetId = targetId,
+				Damage = damage,
+				HealthAfter = healthAfter,
+				Killed = killed,
+			})
 		end
 	end
 end
@@ -73,6 +109,7 @@ function TowerReplicationService.Start(): boolean
 	table.insert(connections, Players.PlayerRemoving:Connect(onPlayerRemoving))
 	table.insert(connections, TowerService.TowerPlaced:Connect(onTowerPlaced))
 	table.insert(connections, TowerService.TowerRemoved:Connect(onTowerRemoved))
+	table.insert(connections, TowerService.TowerTargetChanged:Connect(onTowerTargetChanged))
 	table.insert(connections, TowerService.TowerAttacked:Connect(onTowerAttacked))
 
 	started = true
