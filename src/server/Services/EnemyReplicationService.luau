@@ -72,7 +72,7 @@ local function onEnemySpawned(id: number, _enemyName: string)
 	end
 end
 
-local function onEnemyRemoved(id: number, _enemy: EnemyType, reason: EnemyService.RemovalReason)
+local function onEnemyRemoved(id: number, reason: EnemyService.RemovalReason, _baseDamage: number, _reward: number)
 	for player, _ in pairs(readyPlayers) do
 		local isActive = player:IsDescendantOf(Players)
 		if not isActive then

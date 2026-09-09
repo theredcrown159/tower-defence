@@ -34,8 +34,11 @@ local function removeEnemy(id: number, reason: RemovalReason): boolean
 		return false
 	end
 
+	local baseDamage = enemy:GetBaseDamage()
+	local reward = enemy:GetReward()
+
 	activeEnemies[id] = nil
-	enemyRemovedEvent:Fire(id, enemy, reason)
+	enemyRemovedEvent:Fire(id, reason, baseDamage, reward)
 
 	return true
 end
