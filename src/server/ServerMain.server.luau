@@ -3,6 +3,7 @@
 local Workspace = game:GetService("Workspace")
 
 local BaseService = require(script.Parent.Services.BaseService)
+local EconomyService = require(script.Parent.Services.EconomyService)
 local EnemyReplicationService = require(script.Parent.Services.EnemyReplicationService)
 local EnemyService = require(script.Parent.Services.EnemyService)
 local MapService = require(script.Parent.Services.MapService)
@@ -13,6 +14,7 @@ local WaveService = require(script.Parent.Services.WaveService)
 
 EnemyReplicationService.Start()
 TowerReplicationService.Start()
+EconomyService.Start()
 
 local mapFolder = Workspace:WaitForChild("MapData", 10)
 MapService.Load(mapFolder)

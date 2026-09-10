@@ -2,6 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local EconomyService = require(script.Parent.EconomyService)
 local Enemy = require(script.Parent.Parent.Domain.Enemies.Enemy)
 local EnemyService = require(script.Parent.EnemyService)
 local SimulationService = require(script.Parent.SimulationService)
@@ -86,6 +87,11 @@ local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 			continue
 		end
 
+		local enemy = enemies[targetId]
+		if not enemy then
+			continue
+		end
+
 		local damage = tower:GetDamage()
 		local killed = EnemyService.DamageEnemy(targetId, damage)
 
@@ -93,6 +99,7 @@ local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 		towerAttackedEvent:Fire(towerId, targetId)
 
 		if killed then
+			EconomyService.AddMoneyToAll(enemy:GetReward())
 			setTarget(towerId, nil)
 		end
 	end
