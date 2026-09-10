@@ -77,24 +77,13 @@ local function onTowerTargetChanged(towerId: number, targetId: number)
 	end
 end
 
-local function onTowerAttacked(
-	sequence: number,
-	towerId: number,
-	targetId: number,
-	damage: number,
-	healthAfter: number,
-	killed: boolean
-)
+local function onTowerAttacked(towerId: number, targetId: number)
 	for player in readyPlayers do
 		if player:IsDescendantOf(Players) then
 			combatEvent:FireClient(player, {
 				Kind = "Attack",
-				Sequence = sequence,
 				TowerId = towerId,
 				TargetId = targetId,
-				Damage = damage,
-				HealthAfter = healthAfter,
-				Killed = killed,
 			})
 		end
 	end

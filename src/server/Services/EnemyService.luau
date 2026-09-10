@@ -9,10 +9,6 @@ local SimulationService = require(script.Parent.SimulationService)
 
 type EnemyType = Enemy.Enemy
 export type RemovalReason = "Dead" | "ReachedBase" | "Cleared"
-export type DamageResult = {
-	Killed: boolean,
-	HealthAfter: number,
-}
 
 type PendingRemoval = {
 	Id: number,
@@ -116,19 +112,14 @@ function EnemyService.GetCount(): number
 	return count
 end
 
-function EnemyService.DamageEnemy(id: number, damage: number): DamageResult?
+function EnemyService.DamageEnemy(id: number, damage: number): boolean
 	local enemy = EnemyService.GetById(id)
 
 	if not enemy then
-		return nil
+		return false
 	end
 
-	local killed = enemy:TakeDamage(damage)
-
-	return {
-		Killed = killed,
-		HealthAfter = enemy:GetHealth(),
-	}
+	return enemy:TakeDamage(damage)
 end
 
 function EnemyService.Remove(id: number): boolean

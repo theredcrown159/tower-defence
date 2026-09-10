@@ -1,5 +1,6 @@
 --!strict
 
+local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -9,11 +10,18 @@ local EnemyController = require(script.Parent.EnemyController)
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
 local placedEvent = towerRemotes:WaitForChild("Placed")
 local removedEvent = towerRemotes:WaitForChild("Removed")
+local attackedEvent = towerRemotes:WaitForChild("Attacked")
 local readyEvent = towerRemotes:WaitForChild("Ready")
 
 local towerModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Towers")
 
 local TowerController = {}
+
+type TowerPacket = {
+	Kind: "TargetChanged" | "Attack",
+	TowerId: number,
+	TargetId: number,
+}
 
 local towers: { [number]: Model } = {}
 local towerTargets: { [number]: number } = {}
@@ -23,6 +31,8 @@ local started = false
 local MIN_DIRECTION_MAGNITUDE = 0.001
 local TURN_SPEED = 12
 local TOWER_YAW_OFFSET = CFrame.Angles(0, 0, 0)
+local BEAM_LIFETIME = 0.15
+local BEAM_WIDTH = 0.12
 
 local function getVisualsFolder(): Folder
 	local existing = Workspace:FindFirstChild("TowerVisuals")
@@ -60,6 +70,32 @@ local function getHumanoidRootPart(model: Model): BasePart?
 	end
 
 	return nil
+end
+
+local function createAttackBeam(originRootPart: BasePart, targetRootPart: BasePart)
+	local originAttachment = Instance.new("Attachment")
+	originAttachment.Name = "AttackBeamOrigin"
+	originAttachment.Parent = originRootPart
+
+	local targetAttachment = Instance.new("Attachment")
+	targetAttachment.Name = "AttackBeamTarget"
+	targetAttachment.Parent = targetRootPart
+
+	local beam = Instance.new("Beam")
+	beam.Name = "TowerAttackBeam"
+	beam.Attachment0 = originAttachment
+	beam.Attachment1 = targetAttachment
+	beam.Color = ColorSequence.new(Color3.new(1, 1, 1))
+	beam.Transparency = NumberSequence.new(0)
+	beam.Width0 = BEAM_WIDTH
+	beam.Width1 = BEAM_WIDTH * 0.75
+	beam.FaceCamera = true
+	beam.LightEmission = 1
+	beam.Parent = originRootPart
+
+	Debris:AddItem(beam, BEAM_LIFETIME)
+	Debris:AddItem(originAttachment, BEAM_LIFETIME)
+	Debris:AddItem(targetAttachment, BEAM_LIFETIME)
 end
 
 local function faceTarget(model: Model, targetPosition: Vector3, deltaTime: number)
@@ -109,6 +145,38 @@ local function onTowerRemoved(id: number)
 	towerTargets[id] = nil
 end
 
+local function showAttack(towerId: number, targetId: number)
+	local towerModel = towers[towerId]
+	local enemyModel = EnemyController.GetModel(targetId)
+
+	if not towerModel or not enemyModel then
+		return
+	end
+
+	local towerRootPart = getHumanoidRootPart(towerModel)
+	local enemyRootPart = getHumanoidRootPart(enemyModel)
+
+	if not towerRootPart or not enemyRootPart then
+		return
+	end
+
+	createAttackBeam(towerRootPart, enemyRootPart)
+end
+
+local function onTowerPacket(packet: TowerPacket)
+	if packet.Kind == "TargetChanged" then
+		if packet.TargetId == 0 then
+			towerTargets[packet.TowerId] = nil
+		else
+			towerTargets[packet.TowerId] = packet.TargetId
+		end
+
+		return
+	end
+
+	showAttack(packet.TowerId, packet.TargetId)
+end
+
 local function onRenderStep(deltaTime: number)
 	for towerId, targetId in towerTargets do
 		local towerModel = towers[towerId]
@@ -130,15 +198,6 @@ function TowerController.GetModel(id: number): Model?
 	return towers[id]
 end
 
-function TowerController.SetTarget(towerId: number, targetId: number?)
-	if not targetId or targetId == 0 then
-		towerTargets[towerId] = nil
-		return
-	end
-
-	towerTargets[towerId] = targetId
-end
-
 function TowerController.Start(): boolean
 	if started then
 		return false
@@ -146,6 +205,7 @@ function TowerController.Start(): boolean
 
 	table.insert(connections, placedEvent.OnClientEvent:Connect(onTowerPlaced))
 	table.insert(connections, removedEvent.OnClientEvent:Connect(onTowerRemoved))
+	table.insert(connections, attackedEvent.OnClientEvent:Connect(onTowerPacket))
 	table.insert(connections, RunService.RenderStepped:Connect(onRenderStep))
 	started = true
 

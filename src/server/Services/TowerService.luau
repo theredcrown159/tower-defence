@@ -27,7 +27,6 @@ TowerService.TowerTargetChanged = towerTargetChangedEvent.Event
 local activeTowers: { [number]: TowerType } = {}
 local activeTargets: { [number]: number } = {}
 local nextTowerId = 0
-local nextAttackSequence = 0
 local simulationConnection: RBXScriptConnection? = nil
 
 local function isEnemyInRange(tower: TowerType, enemyPosition: Vector3): boolean
@@ -88,18 +87,12 @@ local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 		end
 
 		local damage = tower:GetDamage()
-		local result = EnemyService.DamageEnemy(targetId, damage)
-
-		if not result then
-			setTarget(towerId, nil)
-			continue
-		end
+		local killed = EnemyService.DamageEnemy(targetId, damage)
 
 		tower:TriggerAttack()
-		nextAttackSequence += 1
-		towerAttackedEvent:Fire(nextAttackSequence, towerId, targetId, damage, result.HealthAfter, result.Killed)
+		towerAttackedEvent:Fire(towerId, targetId)
 
-		if result.Killed then
+		if killed then
 			setTarget(towerId, nil)
 		end
 	end

@@ -210,10 +210,6 @@ function EnemyController.GetModel(id: number): Model?
 	return enemies[id]
 end
 
-function EnemyController.BeginDeath(id: number): boolean
-	return beginDeath(id)
-end
-
 function EnemyController.Start(): boolean
 	if started then
 		return false
