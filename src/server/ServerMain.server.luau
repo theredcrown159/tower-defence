@@ -39,6 +39,4 @@ end)
 
 SimulationService.Start()
 
-TowerService.Place("Classical", Vector3.new(214.213, -367.609, 226.373), 0)
-
 WaveService.StartNextWave()

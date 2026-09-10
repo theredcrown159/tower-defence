@@ -12,6 +12,7 @@ local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Tow
 local placedEvent = towerRemotes:WaitForChild("Placed")
 local removedEvent = towerRemotes:WaitForChild("Removed")
 local combatEvent = towerRemotes:WaitForChild("Attacked")
+local placeFunction = towerRemotes:WaitForChild("Place")
 local readyEvent = towerRemotes:WaitForChild("Ready")
 
 local TowerReplicationService = {}
@@ -47,6 +48,18 @@ end
 
 local function onPlayerRemoving(player: Player)
 	readyPlayers[player] = nil
+end
+
+local function onPlaceRequested(player: Player, towerName: unknown, position: unknown): boolean
+	if typeof(towerName) ~= "string" then
+		return false
+	end
+
+	if typeof(position) ~= "Vector3" then
+		return false
+	end
+
+	return TowerService.TryPlace(player, towerName, position)
 end
 
 local function onTowerPlaced(id: number, towerName: string, position: Vector3, ownerUserId: number)
@@ -100,6 +113,7 @@ function TowerReplicationService.Start(): boolean
 	table.insert(connections, TowerService.TowerRemoved:Connect(onTowerRemoved))
 	table.insert(connections, TowerService.TowerTargetChanged:Connect(onTowerTargetChanged))
 	table.insert(connections, TowerService.TowerAttacked:Connect(onTowerAttacked))
+	placeFunction.OnServerInvoke = onPlaceRequested
 
 	started = true
 
@@ -117,6 +131,7 @@ function TowerReplicationService.Stop(): boolean
 
 	table.clear(connections)
 	table.clear(readyPlayers)
+	placeFunction.OnServerInvoke = nil
 	started = false
 
 	return true

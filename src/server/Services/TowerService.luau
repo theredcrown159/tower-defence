@@ -1,6 +1,7 @@
 --!strict
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local EconomyService = require(script.Parent.EconomyService)
 local Enemy = require(script.Parent.Parent.Domain.Enemies.Enemy)
@@ -29,6 +30,45 @@ local activeTowers: { [number]: TowerType } = {}
 local activeTargets: { [number]: number } = {}
 local nextTowerId = 0
 local simulationConnection: RBXScriptConnection? = nil
+
+local MINIMUM_TOWER_DISTANCE = 4
+
+local towerZones = Workspace:WaitForChild("MapData"):WaitForChild("TowerZones")
+
+local function getValidPosition(position: Vector3): Vector3?
+	for _, zone in towerZones:GetChildren() do
+		if not zone:IsA("BasePart") then
+			continue
+		end
+
+		local localPosition = zone.CFrame:PointToObjectSpace(position)
+		local halfSize = zone.Size / 2
+
+		local isInsideX = math.abs(localPosition.X) <= halfSize.X
+		local isInsideZ = math.abs(localPosition.Z) <= halfSize.Z
+
+		if isInsideX and isInsideZ then
+			return zone.CFrame:PointToWorldSpace(Vector3.new(localPosition.X, -halfSize.Y, localPosition.Z))
+		end
+	end
+
+	return nil
+end
+
+local function isPositionFree(position: Vector3): boolean
+	for _, tower in activeTowers do
+		local towerPosition = tower:GetPosition()
+		local offsetX = towerPosition.X - position.X
+		local offsetZ = towerPosition.Z - position.Z
+		local distanceSquared = offsetX * offsetX + offsetZ * offsetZ
+
+		if distanceSquared < MINIMUM_TOWER_DISTANCE ^ 2 then
+			return false
+		end
+	end
+
+	return true
+end
 
 local function isEnemyInRange(tower: TowerType, enemyPosition: Vector3): boolean
 	local towerPosition = tower:GetPosition()
@@ -121,6 +161,32 @@ function TowerService.Place(towerName: string, position: Vector3, ownerUserId: n
 	towerPlacedEvent:Fire(towerId, towerName, position, ownerUserId)
 
 	return towerId
+end
+
+function TowerService.TryPlace(player: Player, towerName: string, requestedPosition: Vector3): boolean
+	local definition = TowerDefinitions[towerName]
+
+	if not definition then
+		return false
+	end
+
+	local position = getValidPosition(requestedPosition)
+
+	if not position then
+		return false
+	end
+
+	if not isPositionFree(position) then
+		return false
+	end
+
+	if not EconomyService.SpendMoney(player.UserId, definition.Cost) then
+		return false
+	end
+
+	TowerService.Place(towerName, position, player.UserId)
+
+	return true
 end
 
 function TowerService.GetById(id: number): TowerType?
