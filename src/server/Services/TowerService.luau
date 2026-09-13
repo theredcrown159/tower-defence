@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local EconomyService = require(script.Parent.EconomyService)
 local Enemy = require(script.Parent.Parent.Domain.Enemies.Enemy)
 local EnemyService = require(script.Parent.EnemyService)
+local GameConfig = require(ReplicatedStorage.Shared.Config.GameConfig)
 local MapService = require(script.Parent.MapService)
 local SimulationService = require(script.Parent.SimulationService)
 local Tower = require(script.Parent.Parent.Domain.Towers.Tower)
@@ -31,8 +32,6 @@ local activeTargets: { [number]: number } = {}
 local nextTowerId = 0
 local simulationConnection: RBXScriptConnection? = nil
 
-local MINIMUM_TOWER_DISTANCE = 4
-
 local function isPositionFree(position: Vector3): boolean
 	for _, tower in activeTowers do
 		local towerPosition = tower:GetPosition()
@@ -40,7 +39,7 @@ local function isPositionFree(position: Vector3): boolean
 		local offsetZ = towerPosition.Z - position.Z
 		local distanceSquared = offsetX * offsetX + offsetZ * offsetZ
 
-		if distanceSquared < MINIMUM_TOWER_DISTANCE ^ 2 then
+		if distanceSquared < GameConfig.MinimumTowerDistance ^ 2 then
 			return false
 		end
 	end
@@ -136,7 +135,7 @@ local function place(towerName: string, position: Vector3, ownerUserId: number):
 	local towerId = nextTowerId
 
 	activeTowers[towerId] = tower
-	towerPlacedEvent:Fire(towerId, towerName, position, ownerUserId)
+	towerPlacedEvent:Fire(towerId, tower:GetModelName(), position, ownerUserId)
 
 	return towerId
 end

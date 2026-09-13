@@ -5,6 +5,8 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local GameConfig = require(ReplicatedStorage.Shared.Config.GameConfig)
+
 local towerModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Towers")
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
 local placeFunction = towerRemotes:WaitForChild("Place") :: RemoteFunction
@@ -21,7 +23,6 @@ local placing = false
 local connections: { RBXScriptConnection } = {}
 local started = false
 
-local MINIMUM_TOWER_DISTANCE = 4
 local RAY_DISTANCE = 2000
 local VALID_COLOR = Color3.fromRGB(70, 255, 100)
 local INVALID_COLOR = Color3.fromRGB(255, 70, 70)
@@ -152,7 +153,7 @@ local function isPositionFree(position: Vector3): boolean
 		local offsetZ = towerPosition.Z - position.Z
 		local distanceSquared = offsetX * offsetX + offsetZ * offsetZ
 
-		if distanceSquared < MINIMUM_TOWER_DISTANCE ^ 2 then
+		if distanceSquared < GameConfig.MinimumTowerDistance ^ 2 then
 			return false
 		end
 	end

@@ -62,10 +62,10 @@ local function onPlaceRequested(player: Player, towerName: unknown, position: un
 	return TowerService.TryPlace(player, towerName, position)
 end
 
-local function onTowerPlaced(id: number, towerName: string, position: Vector3, ownerUserId: number)
+local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number)
 	for player in readyPlayers do
 		if player:IsDescendantOf(Players) then
-			placedEvent:FireClient(player, id, towerName, position, ownerUserId)
+			placedEvent:FireClient(player, id, modelName, position, ownerUserId)
 		end
 	end
 end

@@ -6,4 +6,5 @@ return {
 	FixedStep = 1 / 30,
 	MaximumStepsPerFrame = 8,
 	WaveIntermissionDuration = 10,
+	MinimumTowerDistance = 4,
 }
