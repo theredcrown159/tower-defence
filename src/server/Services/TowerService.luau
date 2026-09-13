@@ -27,6 +27,9 @@ TowerService.TowerAttacked = towerAttackedEvent.Event
 local towerTargetChangedEvent = Instance.new("BindableEvent")
 TowerService.TowerTargetChanged = towerTargetChangedEvent.Event
 
+local towerUpgradedEvent = Instance.new("BindableEvent")
+TowerService.TowerUpgraded = towerUpgradedEvent.Event
+
 local activeTowers: { [number]: TowerType } = {}
 local activeTargets: { [number]: number } = {}
 local nextTowerId = 0
@@ -135,7 +138,7 @@ local function place(towerName: string, position: Vector3, ownerUserId: number):
 	local towerId = nextTowerId
 
 	activeTowers[towerId] = tower
-	towerPlacedEvent:Fire(towerId, tower:GetModelName(), position, ownerUserId)
+	towerPlacedEvent:Fire(towerId, tower:GetModelName(), position, ownerUserId, tower:GetLevel())
 
 	return towerId
 end
@@ -197,7 +200,13 @@ function TowerService.TryUpgrade(player: Player, towerId: number): boolean
 		return false
 	end
 
-	return tower:Upgrade()
+	if not tower:Upgrade() then
+		return false
+	end
+
+	towerUpgradedEvent:Fire(towerId, tower:GetLevel())
+
+	return true
 end
 
 function TowerService.GetById(id: number): TowerType?

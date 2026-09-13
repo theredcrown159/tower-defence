@@ -14,6 +14,8 @@ local removedEvent = towerRemotes:WaitForChild("Removed")
 local combatEvent = towerRemotes:WaitForChild("Attacked")
 local placeFunction = towerRemotes:WaitForChild("Place")
 local readyEvent = towerRemotes:WaitForChild("Ready")
+local upgradeFunction = towerRemotes:WaitForChild("Upgrade")
+local upgradedEvent = towerRemotes:WaitForChild("Upgraded")
 
 local TowerReplicationService = {}
 
@@ -22,7 +24,14 @@ local connections: { RBXScriptConnection } = {}
 local started = false
 
 local function sendTowerToPlayer(player: Player, id: number, tower: TowerType)
-	placedEvent:FireClient(player, id, tower:GetModelName(), tower:GetPosition(), tower:GetOwnerUserId())
+	placedEvent:FireClient(
+		player,
+		id,
+		tower:GetModelName(),
+		tower:GetPosition(),
+		tower:GetOwnerUserId(),
+		tower:GetLevel()
+	)
 
 	local targetId = TowerService.GetTargetId(id)
 	if targetId then
@@ -62,10 +71,26 @@ local function onPlaceRequested(player: Player, towerName: unknown, position: un
 	return TowerService.TryPlace(player, towerName, position)
 end
 
-local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number)
+local function onUpgradeRequested(player: Player, towerId: unknown): boolean
+	if typeof(towerId) ~= "number" or towerId <= 0 or towerId % 1 ~= 0 then
+		return false
+	end
+
+	return TowerService.TryUpgrade(player, towerId)
+end
+
+local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number, level: number)
 	for player in readyPlayers do
 		if player:IsDescendantOf(Players) then
-			placedEvent:FireClient(player, id, modelName, position, ownerUserId)
+			placedEvent:FireClient(player, id, modelName, position, ownerUserId, level)
+		end
+	end
+end
+
+local function onTowerUpgraded(id: number, level: number)
+	for player in readyPlayers do
+		if player:IsDescendantOf(Players) then
+			upgradedEvent:FireClient(player, id, level)
 		end
 	end
 end
@@ -113,7 +138,9 @@ function TowerReplicationService.Start(): boolean
 	table.insert(connections, TowerService.TowerRemoved:Connect(onTowerRemoved))
 	table.insert(connections, TowerService.TowerTargetChanged:Connect(onTowerTargetChanged))
 	table.insert(connections, TowerService.TowerAttacked:Connect(onTowerAttacked))
+	table.insert(connections, TowerService.TowerUpgraded:Connect(onTowerUpgraded))
 	placeFunction.OnServerInvoke = onPlaceRequested
+	upgradeFunction.OnServerInvoke = onUpgradeRequested
 
 	started = true
 
@@ -132,6 +159,7 @@ function TowerReplicationService.Stop(): boolean
 	table.clear(connections)
 	table.clear(readyPlayers)
 	placeFunction.OnServerInvoke = nil
+	upgradeFunction.OnServerInvoke = nil
 	started = false
 
 	return true
