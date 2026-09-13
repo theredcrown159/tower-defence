@@ -13,6 +13,12 @@ local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinition
 
 type TowerType = Tower.Tower
 type TargetMode = Tower.TargetMode
+type ActiveAttack = {
+	TargetId: number,
+	Elapsed: number,
+	NextHitIndex: number,
+	DamagePerHit: number,
+}
 
 local TowerService = {}
 
@@ -36,6 +42,7 @@ TowerService.TowerTargetModeChanged = towerTargetModeChangedEvent.Event
 
 local activeTowers: { [number]: TowerType } = {}
 local activeTargets: { [number]: number } = {}
+local activeAttacks: { [number]: ActiveAttack } = {}
 local nextTowerId = 0
 local simulationConnection: RBXScriptConnection? = nil
 
@@ -111,11 +118,52 @@ local function setTarget(towerId: number, targetId: number?)
 	towerTargetChangedEvent:Fire(towerId, targetId or 0)
 end
 
+local function updateAttack(
+	towerId: number,
+	tower: TowerType,
+	attack: ActiveAttack,
+	enemies: { [number]: Enemy.Enemy },
+	fixedDeltaTime: number
+)
+	attack.Elapsed += fixedDeltaTime
+
+	local hitTimes = tower:GetAttackHitTimes()
+
+	while attack.NextHitIndex <= #hitTimes and attack.Elapsed >= hitTimes[attack.NextHitIndex] do
+		local enemy = enemies[attack.TargetId]
+
+		if enemy and not enemy:IsDead() and not enemy:HasReachedBase() then
+			local killed = EnemyService.DamageEnemy(attack.TargetId, attack.DamagePerHit)
+
+			if killed then
+				EconomyService.AddMoney(tower:GetOwnerUserId(), enemy:GetReward())
+				setTarget(towerId, nil)
+			end
+		else
+			setTarget(towerId, nil)
+		end
+
+		attack.NextHitIndex += 1
+	end
+
+	if attack.Elapsed >= tower:GetAttackDuration() then
+		activeAttacks[towerId] = nil
+	end
+end
+
 local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 	local enemies = EnemyService.GetAll()
 
 	for towerId, tower in activeTowers do
 		tower:Step(fixedDeltaTime)
+
+		local activeAttack = activeAttacks[towerId]
+
+		if activeAttack then
+			updateAttack(towerId, tower, activeAttack, enemies, fixedDeltaTime)
+			continue
+		end
+
 		local targetId = findTarget(tower, enemies)
 		setTarget(towerId, targetId)
 
@@ -123,21 +171,19 @@ local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 			continue
 		end
 
-		local enemy = enemies[targetId]
-		if not enemy then
+		local hitCount = #tower:GetAttackHitTimes()
+
+		if not tower:TriggerAttack() then
 			continue
 		end
 
-		local damage = tower:GetDamage()
-		local killed = EnemyService.DamageEnemy(targetId, damage)
-
-		tower:TriggerAttack()
+		activeAttacks[towerId] = {
+			TargetId = targetId,
+			Elapsed = 0,
+			NextHitIndex = 1,
+			DamagePerHit = tower:GetDamage() / hitCount,
+		}
 		towerAttackedEvent:Fire(towerId, targetId)
-
-		if killed then
-			EconomyService.AddMoney(tower:GetOwnerUserId(), enemy:GetReward())
-			setTarget(towerId, nil)
-		end
 	end
 end
 
@@ -299,6 +345,7 @@ function TowerService.Remove(id: number): boolean
 	end
 
 	setTarget(id, nil)
+	activeAttacks[id] = nil
 	activeTowers[id] = nil
 	towerRemovedEvent:Fire(id)
 
@@ -348,6 +395,7 @@ function TowerService.Stop(): boolean
 
 	simulationConnection:Disconnect()
 	simulationConnection = nil
+	table.clear(activeAttacks)
 
 	return true
 end

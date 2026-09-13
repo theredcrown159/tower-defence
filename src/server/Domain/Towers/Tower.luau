@@ -38,6 +38,24 @@ function Tower.new(definition: TowerDefinition, position: Vector3, ownerUserId: 
 		error("Tower must have at least one level")
 	end
 
+	if definition.AttackDuration <= 0 then
+		error("Tower AttackDuration must be greater than zero")
+	end
+
+	if #definition.AttackHitTimes == 0 then
+		error("Tower must have at least one attack hit")
+	end
+
+	local previousHitTime = 0
+
+	for hitIndex, hitTime in ipairs(definition.AttackHitTimes) do
+		if hitTime <= previousHitTime or hitTime > definition.AttackDuration then
+			error(`Tower attack hit {hitIndex} has an invalid time`)
+		end
+
+		previousHitTime = hitTime
+	end
+
 	for levelIndex, level in ipairs(definition.Levels) do
 		if level.Damage <= 0 then
 			error("Tower level " .. levelIndex .. " Damage must be greater than zero")
@@ -91,7 +109,7 @@ function Tower.TriggerAttack(self: Tower): boolean
 		return false
 	end
 
-	self._cooldownRemaining = self:GetAttackCooldown()
+	self._cooldownRemaining = math.max(self:GetAttackCooldown(), self:GetAttackDuration())
 
 	return true
 end
@@ -149,6 +167,14 @@ end
 
 function Tower.GetDamage(self: Tower): number
 	return getCurrentLevel(self).Damage
+end
+
+function Tower.GetAttackDuration(self: Tower): number
+	return self._definition.AttackDuration
+end
+
+function Tower.GetAttackHitTimes(self: Tower): { number }
+	return self._definition.AttackHitTimes
 end
 
 function Tower.GetRange(self: Tower): number

@@ -1,6 +1,5 @@
 --!strict
 
-local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -9,6 +8,7 @@ local AnimationPlayer = require(script.Parent.Parent.Util.AnimationPlayer)
 local EnemyController = require(script.Parent.EnemyController)
 local TowerNameUI = require(script.Parent.TowerNameUI)
 local TowerSelectionController = require(script.Parent.TowerSelectionController)
+local VFXController = require(script.Parent.VFXController)
 
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
 local placedEvent = towerRemotes:WaitForChild("Placed")
@@ -19,6 +19,7 @@ local targetModeChangedEvent = towerRemotes:WaitForChild("TargetModeChanged")
 local readyEvent = towerRemotes:WaitForChild("Ready")
 
 local towerModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Towers")
+local gameSpeedValue = ReplicatedStorage:WaitForChild("GameInfo"):WaitForChild("GameSpeed") :: NumberValue
 
 local TowerController = {}
 
@@ -30,6 +31,9 @@ type TowerPacket = {
 
 local towers: { [number]: Model } = {}
 local attackTracks: { [number]: AnimationTrack } = {}
+local attackCycleTargets: { [number]: number } = {}
+local attackMarkerConnections: { [number]: RBXScriptConnection } = {}
+local attackStoppedConnections: { [number]: RBXScriptConnection } = {}
 local towerTargets: { [number]: number } = {}
 local connections: { RBXScriptConnection } = {}
 local started = false
@@ -37,9 +41,7 @@ local started = false
 local MIN_DIRECTION_MAGNITUDE = 0.001
 local TURN_SPEED = 12
 local TOWER_YAW_OFFSET = CFrame.Angles(0, 0, 0)
-local BEAM_LIFETIME = 0.15
-local BEAM_WIDTH = 0.12
-local ATTACK_ANIMATION_ID = "100594661450640"
+local ATTACK_ANIMATION_ID = "85779923101020"
 
 local function getVisualsFolder(): Folder
 	local existing = Workspace:FindFirstChild("TowerVisuals")
@@ -81,32 +83,6 @@ local function getHumanoidRootPart(model: Model): BasePart?
 	return nil
 end
 
-local function createAttackBeam(originRootPart: BasePart, targetRootPart: BasePart)
-	local originAttachment = Instance.new("Attachment")
-	originAttachment.Name = "AttackBeamOrigin"
-	originAttachment.Parent = originRootPart
-
-	local targetAttachment = Instance.new("Attachment")
-	targetAttachment.Name = "AttackBeamTarget"
-	targetAttachment.Parent = targetRootPart
-
-	local beam = Instance.new("Beam")
-	beam.Name = "TowerAttackBeam"
-	beam.Attachment0 = originAttachment
-	beam.Attachment1 = targetAttachment
-	beam.Color = ColorSequence.new(Color3.new(1, 1, 1))
-	beam.Transparency = NumberSequence.new(0)
-	beam.Width0 = BEAM_WIDTH
-	beam.Width1 = BEAM_WIDTH * 0.75
-	beam.FaceCamera = true
-	beam.LightEmission = 1
-	beam.Parent = originRootPart
-
-	Debris:AddItem(beam, BEAM_LIFETIME)
-	Debris:AddItem(originAttachment, BEAM_LIFETIME)
-	Debris:AddItem(targetAttachment, BEAM_LIFETIME)
-end
-
 local function faceTarget(model: Model, targetPosition: Vector3, deltaTime: number)
 	local pivot = model:GetPivot()
 	local flatTarget = Vector3.new(targetPosition.X, pivot.Position.Y, targetPosition.Z)
@@ -120,6 +96,78 @@ local function faceTarget(model: Model, targetPosition: Vector3, deltaTime: numb
 	local alpha = 1 - math.exp(-TURN_SPEED * deltaTime)
 
 	model:PivotTo(pivot:Lerp(targetCFrame, alpha))
+end
+
+local function showAttackHit(towerId: number)
+	local targetId = attackCycleTargets[towerId]
+	local towerModel = towers[towerId]
+
+	if not targetId or not towerModel then
+		return
+	end
+
+	local enemyModel = EnemyController.GetModel(targetId)
+
+	if not enemyModel then
+		return
+	end
+
+	local towerRootPart = getHumanoidRootPart(towerModel)
+	local enemyRootPart = getHumanoidRootPart(enemyModel)
+
+	if not towerRootPart or not enemyRootPart then
+		return
+	end
+
+	VFXController.PlayWebAttack(towerRootPart, enemyRootPart, gameSpeedValue.Value)
+end
+
+local function clearAttackTrack(towerId: number)
+	local markerConnection = attackMarkerConnections[towerId]
+	local stoppedConnection = attackStoppedConnections[towerId]
+	local attackTrack = attackTracks[towerId]
+
+	if markerConnection then
+		markerConnection:Disconnect()
+	end
+
+	if stoppedConnection then
+		stoppedConnection:Disconnect()
+	end
+
+	attackMarkerConnections[towerId] = nil
+	attackStoppedConnections[towerId] = nil
+	attackTracks[towerId] = nil
+	attackCycleTargets[towerId] = nil
+	AnimationPlayer.Stop(attackTrack)
+end
+
+local function loadAttackTrack(towerId: number, model: Model)
+	local attackTrack = AnimationPlayer.Load(model, ATTACK_ANIMATION_ID, false, Enum.AnimationPriority.Action)
+
+	if not attackTrack then
+		return
+	end
+
+	attackTracks[towerId] = attackTrack
+	attackMarkerConnections[towerId] = attackTrack:GetMarkerReachedSignal("hit"):Connect(function()
+		showAttackHit(towerId)
+	end)
+	attackStoppedConnections[towerId] = attackTrack.Stopped:Connect(function()
+		if attackTracks[towerId] == attackTrack then
+			attackCycleTargets[towerId] = nil
+		end
+	end)
+end
+
+local function updateAttackSpeeds()
+	local gameSpeed = gameSpeedValue.Value
+
+	for _, attackTrack in attackTracks do
+		if attackTrack.IsPlaying then
+			attackTrack:AdjustSpeed(gameSpeed)
+		end
+	end
 end
 
 local function onTowerPlaced(
@@ -140,8 +188,7 @@ local function onTowerPlaced(
 	local existing = towers[id]
 
 	if existing then
-		AnimationPlayer.Stop(attackTracks[id])
-		attackTracks[id] = nil
+		clearAttackTrack(id)
 		TowerNameUI.Remove(id)
 		TowerSelectionController.Unregister(existing)
 		existing:Destroy()
@@ -159,12 +206,7 @@ local function onTowerPlaced(
 	towers[id] = model
 	TowerNameUI.Create(id, model, modelName)
 	TowerSelectionController.Register(model)
-
-	local attackTrack = AnimationPlayer.Load(model, ATTACK_ANIMATION_ID, false, Enum.AnimationPriority.Action)
-
-	if attackTrack then
-		attackTracks[id] = attackTrack
-	end
+	loadAttackTrack(id, model)
 end
 
 local function onTowerUpgraded(id: number, level: number)
@@ -186,7 +228,7 @@ end
 local function onTowerRemoved(id: number)
 	local model = towers[id]
 
-	AnimationPlayer.Stop(attackTracks[id])
+	clearAttackTrack(id)
 	TowerNameUI.Remove(id)
 
 	if model then
@@ -195,44 +237,18 @@ local function onTowerRemoved(id: number)
 	end
 
 	towers[id] = nil
-	attackTracks[id] = nil
 	towerTargets[id] = nil
 end
 
-local function playAttackAnimation(towerId: number)
+local function playAttackAnimation(towerId: number, targetId: number)
 	local attackTrack = attackTracks[towerId]
 
-	if not attackTrack then
+	if not attackTrack or attackTrack.IsPlaying then
 		return
 	end
 
-	attackTrack:Stop(0)
-	attackTrack:Play(0)
-end
-
-local function showAttack(towerId: number, targetId: number)
-	local towerModel = towers[towerId]
-
-	if not towerModel then
-		return
-	end
-
-	playAttackAnimation(towerId)
-
-	local enemyModel = EnemyController.GetModel(targetId)
-
-	if not enemyModel then
-		return
-	end
-
-	local towerRootPart = getHumanoidRootPart(towerModel)
-	local enemyRootPart = getHumanoidRootPart(enemyModel)
-
-	if not towerRootPart or not enemyRootPart then
-		return
-	end
-
-	createAttackBeam(towerRootPart, enemyRootPart)
+	attackCycleTargets[towerId] = targetId
+	attackTrack:Play(0, 1, gameSpeedValue.Value)
 end
 
 local function onTowerPacket(packet: TowerPacket)
@@ -246,7 +262,7 @@ local function onTowerPacket(packet: TowerPacket)
 		return
 	end
 
-	showAttack(packet.TowerId, packet.TargetId)
+	playAttackAnimation(packet.TowerId, packet.TargetId)
 end
 
 local function onRenderStep(deltaTime: number)
@@ -281,6 +297,7 @@ function TowerController.Start(): boolean
 	table.insert(connections, attackedEvent.OnClientEvent:Connect(onTowerPacket))
 	table.insert(connections, upgradedEvent.OnClientEvent:Connect(onTowerUpgraded))
 	table.insert(connections, targetModeChangedEvent.OnClientEvent:Connect(onTowerTargetModeChanged))
+	table.insert(connections, gameSpeedValue:GetPropertyChangedSignal("Value"):Connect(updateAttackSpeeds))
 	table.insert(connections, RunService.RenderStepped:Connect(onRenderStep))
 	started = true
 
@@ -301,13 +318,15 @@ function TowerController.Stop(): boolean
 	TowerNameUI.Clear()
 
 	for id, model in towers do
-		AnimationPlayer.Stop(attackTracks[id])
+		clearAttackTrack(id)
 		TowerSelectionController.Unregister(model)
 		model:Destroy()
 		towers[id] = nil
-		attackTracks[id] = nil
 	end
 
+	table.clear(attackCycleTargets)
+	table.clear(attackMarkerConnections)
+	table.clear(attackStoppedConnections)
 	table.clear(towerTargets)
 	table.clear(connections)
 	started = false
