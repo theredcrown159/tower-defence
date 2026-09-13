@@ -15,6 +15,7 @@ local placedEvent = towerRemotes:WaitForChild("Placed")
 local removedEvent = towerRemotes:WaitForChild("Removed")
 local attackedEvent = towerRemotes:WaitForChild("Attacked")
 local upgradedEvent = towerRemotes:WaitForChild("Upgraded")
+local targetModeChangedEvent = towerRemotes:WaitForChild("TargetModeChanged")
 local readyEvent = towerRemotes:WaitForChild("Ready")
 
 local towerModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Towers")
@@ -121,7 +122,14 @@ local function faceTarget(model: Model, targetPosition: Vector3, deltaTime: numb
 	model:PivotTo(pivot:Lerp(targetCFrame, alpha))
 end
 
-local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number, level: number)
+local function onTowerPlaced(
+	id: number,
+	modelName: string,
+	position: Vector3,
+	ownerUserId: number,
+	level: number,
+	targetMode: string
+)
 	local template = towerModels:FindFirstChild(modelName)
 
 	if not template or not template:IsA("Model") then
@@ -144,6 +152,7 @@ local function onTowerPlaced(id: number, modelName: string, position: Vector3, o
 	model:SetAttribute("TowerName", modelName)
 	model:SetAttribute("OwnerUserId", ownerUserId)
 	model:SetAttribute("TowerLevel", level)
+	model:SetAttribute("TargetMode", targetMode)
 	prepareVisualModel(model)
 	model:PivotTo(CFrame.new(position))
 	model.Parent = getVisualsFolder()
@@ -163,6 +172,14 @@ local function onTowerUpgraded(id: number, level: number)
 
 	if model then
 		model:SetAttribute("TowerLevel", level)
+	end
+end
+
+local function onTowerTargetModeChanged(id: number, targetMode: string)
+	local model = towers[id]
+
+	if model then
+		model:SetAttribute("TargetMode", targetMode)
 	end
 end
 
@@ -263,6 +280,7 @@ function TowerController.Start(): boolean
 	table.insert(connections, removedEvent.OnClientEvent:Connect(onTowerRemoved))
 	table.insert(connections, attackedEvent.OnClientEvent:Connect(onTowerPacket))
 	table.insert(connections, upgradedEvent.OnClientEvent:Connect(onTowerUpgraded))
+	table.insert(connections, targetModeChangedEvent.OnClientEvent:Connect(onTowerTargetModeChanged))
 	table.insert(connections, RunService.RenderStepped:Connect(onRenderStep))
 	started = true
 

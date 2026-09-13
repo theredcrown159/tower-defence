@@ -1,5 +1,7 @@
 --!strict
 
+export type TargetMode = "First" | "Last" | "Strongest"
+
 export type TowerLevelDefinition = {
 	Damage: number,
 	Range: number,
@@ -10,6 +12,7 @@ export type TowerLevelDefinition = {
 export type TowerDefinition = {
 	ModelName: string,
 	Levels: { TowerLevelDefinition },
+	TargetModes: { TargetMode },
 	AbilityIds: { string },
 }
 
@@ -36,6 +39,7 @@ local TowerDefinitions: { [string]: TowerDefinition } = {
 				AttackCooldown = 0.75,
 			},
 		},
+		TargetModes = { "First", "Last", "Strongest" },
 		AbilityIds = {},
 	},
 }

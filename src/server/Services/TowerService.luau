@@ -12,6 +12,7 @@ local Tower = require(script.Parent.Parent.Domain.Towers.Tower)
 local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinitions)
 
 type TowerType = Tower.Tower
+type TargetMode = Tower.TargetMode
 
 local TowerService = {}
 
@@ -29,6 +30,9 @@ TowerService.TowerTargetChanged = towerTargetChangedEvent.Event
 
 local towerUpgradedEvent = Instance.new("BindableEvent")
 TowerService.TowerUpgraded = towerUpgradedEvent.Event
+
+local towerTargetModeChangedEvent = Instance.new("BindableEvent")
+TowerService.TowerTargetModeChanged = towerTargetModeChangedEvent.Event
 
 local activeTowers: { [number]: TowerType } = {}
 local activeTargets: { [number]: number } = {}
@@ -60,9 +64,21 @@ local function isEnemyInRange(tower: TowerType, enemyPosition: Vector3): boolean
 	return distanceSquared <= range * range
 end
 
-local function findFirstTarget(tower: TowerType, enemies: { [number]: Enemy.Enemy }): number?
+local function getTargetPriority(tower: TowerType, enemy: Enemy.Enemy): number
+	local targetMode = tower:GetTargetMode()
+
+	if targetMode == "First" then
+		return enemy:GetDistanceTraveled()
+	elseif targetMode == "Last" then
+		return -enemy:GetDistanceTraveled()
+	else
+		return enemy:GetHealth()
+	end
+end
+
+local function findTarget(tower: TowerType, enemies: { [number]: Enemy.Enemy }): number?
 	local targetId: number? = nil
-	local targetDistanceTraveled = -math.huge
+	local targetPriority = -math.huge
 
 	for enemyId, enemy in enemies do
 		if enemy:IsDead() or enemy:HasReachedBase() then
@@ -73,12 +89,12 @@ local function findFirstTarget(tower: TowerType, enemies: { [number]: Enemy.Enem
 			continue
 		end
 
-		local distanceTraveled = enemy:GetDistanceTraveled()
+		local priority = getTargetPriority(tower, enemy)
 
-		if distanceTraveled > targetDistanceTraveled then
+		if priority > targetPriority then
 			targetId = enemyId
-			targetDistanceTraveled = distanceTraveled
-		elseif distanceTraveled == targetDistanceTraveled and targetId and enemyId < targetId then
+			targetPriority = priority
+		elseif priority == targetPriority and targetId and enemyId < targetId then
 			targetId = enemyId
 		end
 	end
@@ -100,7 +116,7 @@ local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 
 	for towerId, tower in activeTowers do
 		tower:Step(fixedDeltaTime)
-		local targetId = findFirstTarget(tower, enemies)
+		local targetId = findTarget(tower, enemies)
 		setTarget(towerId, targetId)
 
 		if not targetId or not tower:CanAttack() then
@@ -138,7 +154,7 @@ local function place(towerName: string, position: Vector3, ownerUserId: number):
 	local towerId = nextTowerId
 
 	activeTowers[towerId] = tower
-	towerPlacedEvent:Fire(towerId, tower:GetModelName(), position, ownerUserId, tower:GetLevel())
+	towerPlacedEvent:Fire(towerId, tower:GetModelName(), position, ownerUserId, tower:GetLevel(), tower:GetTargetMode())
 
 	return towerId
 end
@@ -227,6 +243,30 @@ function TowerService.TrySell(player: Player, towerId: number): boolean
 	end
 
 	EconomyService.AddMoney(player.UserId, refund)
+
+	return true
+end
+
+function TowerService.TrySetTargetMode(player: Player, towerId: number, targetMode: TargetMode): boolean
+	if not simulationConnection then
+		return false
+	end
+
+	local tower = activeTowers[towerId]
+
+	if not tower or tower:GetOwnerUserId() ~= player.UserId then
+		return false
+	end
+
+	if tower:GetTargetMode() == targetMode then
+		return true
+	end
+
+	if not tower:SetTargetMode(targetMode) then
+		return false
+	end
+
+	towerTargetModeChangedEvent:Fire(towerId, targetMode)
 
 	return true
 end

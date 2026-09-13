@@ -6,6 +6,7 @@ local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinition
 
 type TowerDefinition = TowerDefinitions.TowerDefinition
 type TowerLevelDefinition = TowerDefinitions.TowerLevelDefinition
+export type TargetMode = TowerDefinitions.TargetMode
 
 local Tower = {}
 Tower.__index = Tower
@@ -17,6 +18,7 @@ export type Tower = typeof(setmetatable(
 		_ownerUserId: number,
 		_cooldownRemaining: number,
 		_level: number,
+		_targetMode: TargetMode,
 	},
 	Tower
 ))
@@ -54,12 +56,19 @@ function Tower.new(definition: TowerDefinition, position: Vector3, ownerUserId: 
 		end
 	end
 
+	local defaultTargetMode = definition.TargetModes[1]
+
+	if not defaultTargetMode then
+		error("Tower must have at least one target mode")
+	end
+
 	local self: Tower = setmetatable({
 		_definition = definition,
 		_position = position,
 		_ownerUserId = ownerUserId,
 		_cooldownRemaining = 0,
 		_level = 1,
+		_targetMode = defaultTargetMode,
 	}, Tower)
 
 	return self
@@ -105,6 +114,20 @@ end
 
 function Tower.GetMaxLevel(self: Tower): number
 	return #self._definition.Levels
+end
+
+function Tower.GetTargetMode(self: Tower): TargetMode
+	return self._targetMode
+end
+
+function Tower.SetTargetMode(self: Tower, targetMode: TargetMode): boolean
+	if not table.find(self._definition.TargetModes, targetMode) then
+		return false
+	end
+
+	self._targetMode = targetMode
+
+	return true
 end
 
 function Tower.GetUpgradeCost(self: Tower): number?

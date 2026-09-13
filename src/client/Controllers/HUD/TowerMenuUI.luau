@@ -8,6 +8,7 @@ local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinition
 
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
 local sellFunction = towerRemotes:WaitForChild("Sell") :: RemoteFunction
+local setTargetModeFunction = towerRemotes:WaitForChild("SetTargetMode") :: RemoteFunction
 local upgradeFunction = towerRemotes:WaitForChild("Upgrade") :: RemoteFunction
 
 local TowerMenuUI = {}
@@ -15,6 +16,7 @@ local TowerMenuUI = {}
 local menu: GuiObject? = nil
 local titleLabel: TextLabel? = nil
 local ownerLabel: TextLabel? = nil
+local targetingLabel: TextLabel? = nil
 local currentDamageLabel: TextLabel? = nil
 local currentRangeLabel: TextLabel? = nil
 local currentCooldownLabel: TextLabel? = nil
@@ -27,10 +29,13 @@ local sellButton: GuiButton? = nil
 local sellAmountLabel: TextLabel? = nil
 local selectedModel: Model? = nil
 local levelChangedConnection: RBXScriptConnection? = nil
+local targetModeChangedConnection: RBXScriptConnection? = nil
 local upgradeActivatedConnection: RBXScriptConnection? = nil
 local sellActivatedConnection: RBXScriptConnection? = nil
+local targetingInputConnection: RBXScriptConnection? = nil
 local upgradeRequestInFlight = false
 local sellRequestInFlight = false
+local targetModeRequestInFlight = false
 
 local function getOwnerName(ownerUserId: number): string
 	local owner = Players:GetPlayerByUserId(ownerUserId)
@@ -55,6 +60,12 @@ local function setSellEnabled(enabled: boolean)
 		sellButton.Active = enabled
 		sellButton.Interactable = enabled
 		sellButton.AutoButtonColor = enabled
+	end
+end
+
+local function setTargetingEnabled(enabled: boolean)
+	if targetingLabel then
+		targetingLabel.Active = enabled
 	end
 end
 
@@ -83,6 +94,7 @@ local function update()
 		or not menu
 		or not titleLabel
 		or not ownerLabel
+		or not targetingLabel
 		or not currentDamageLabel
 		or not currentRangeLabel
 		or not currentCooldownLabel
@@ -98,8 +110,14 @@ local function update()
 	local towerName = model:GetAttribute("TowerName")
 	local ownerUserId = model:GetAttribute("OwnerUserId")
 	local level = model:GetAttribute("TowerLevel")
+	local targetMode = model:GetAttribute("TargetMode")
 
-	if typeof(towerName) ~= "string" or typeof(ownerUserId) ~= "number" or typeof(level) ~= "number" then
+	if
+		typeof(towerName) ~= "string"
+		or typeof(ownerUserId) ~= "number"
+		or typeof(level) ~= "number"
+		or typeof(targetMode) ~= "string"
+	then
 		return
 	end
 
@@ -115,6 +133,7 @@ local function update()
 
 	titleLabel.Text = towerName:gsub("_", " ")
 	ownerLabel.Text = `Owner: {getOwnerName(ownerUserId)}`
+	targetingLabel.Text = targetMode
 	currentDamageLabel.Text = tostring(currentLevel.Damage)
 	currentRangeLabel.Text = tostring(currentLevel.Range)
 	currentCooldownLabel.Text = tostring(currentLevel.AttackCooldown)
@@ -132,17 +151,18 @@ local function update()
 	end
 
 	local isOwner = ownerUserId == Players.LocalPlayer.UserId
-	local requestInFlight = upgradeRequestInFlight or sellRequestInFlight
+	local requestInFlight = upgradeRequestInFlight or sellRequestInFlight or targetModeRequestInFlight
 
 	sellAmountLabel.Text = tostring(getSellAmount(towerName, currentLevelIndex))
 	setUpgradeEnabled(isOwner and nextLevel ~= nil and not requestInFlight)
 	setSellEnabled(isOwner and not requestInFlight)
+	setTargetingEnabled(isOwner and not requestInFlight)
 end
 
 local function requestUpgrade()
 	local model = selectedModel
 
-	if not model or upgradeRequestInFlight or sellRequestInFlight then
+	if not model or upgradeRequestInFlight or sellRequestInFlight or targetModeRequestInFlight then
 		return
 	end
 
@@ -184,7 +204,7 @@ end
 local function requestSell()
 	local model = selectedModel
 
-	if not model or upgradeRequestInFlight or sellRequestInFlight then
+	if not model or upgradeRequestInFlight or sellRequestInFlight or targetModeRequestInFlight then
 		return
 	end
 
@@ -217,14 +237,78 @@ local function requestSell()
 	end
 end
 
+local function requestNextTargetMode()
+	local model = selectedModel
+
+	if not model or upgradeRequestInFlight or sellRequestInFlight or targetModeRequestInFlight then
+		return
+	end
+
+	local towerId = model:GetAttribute("TowerId")
+	local towerName = model:GetAttribute("TowerName")
+	local ownerUserId = model:GetAttribute("OwnerUserId")
+	local targetMode = model:GetAttribute("TargetMode")
+
+	if
+		typeof(towerId) ~= "number"
+		or typeof(towerName) ~= "string"
+		or typeof(ownerUserId) ~= "number"
+		or typeof(targetMode) ~= "string"
+		or ownerUserId ~= Players.LocalPlayer.UserId
+	then
+		return
+	end
+
+	local definition = TowerDefinitions[towerName]
+	local targetModes = if definition then definition.TargetModes else nil
+
+	if not targetModes or #targetModes == 0 then
+		return
+	end
+
+	local currentIndex = 0
+
+	for index, allowedMode in targetModes do
+		if allowedMode == targetMode then
+			currentIndex = index
+			break
+		end
+	end
+
+	local nextTargetMode = targetModes[currentIndex % #targetModes + 1]
+
+	targetModeRequestInFlight = true
+	update()
+	local requestSucceeded, requestError = pcall(function()
+		setTargetModeFunction:InvokeServer(towerId, nextTargetMode)
+	end)
+	targetModeRequestInFlight = false
+	update()
+
+	if not requestSucceeded then
+		warn(`Target mode request failed: {requestError}`)
+	end
+end
+
+local function onTargetingInput(input: InputObject)
+	local isPointerInput = input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
+
+	if isPointerInput then
+		requestNextTargetMode()
+	end
+end
+
 function TowerMenuUI.Start(unitUpgrade: GuiObject)
 	local main = unitUpgrade:WaitForChild("Main")
 	local upgrade = unitUpgrade:WaitForChild("Upgrade") :: GuiButton
 	local sell = unitUpgrade:WaitForChild("Sell") :: GuiButton
+	local targeting = unitUpgrade:WaitForChild("Targeting") :: TextLabel
 
 	menu = unitUpgrade
 	titleLabel = unitUpgrade:WaitForChild("Title") :: TextLabel
 	ownerLabel = unitUpgrade:WaitForChild("Owner") :: TextLabel
+	targetingLabel = targeting
 	currentDamageLabel = main:WaitForChild("PrevDmg") :: TextLabel
 	currentRangeLabel = main:WaitForChild("PrevRange") :: TextLabel
 	currentCooldownLabel = main:WaitForChild("PrevCool") :: TextLabel
@@ -240,6 +324,7 @@ function TowerMenuUI.Start(unitUpgrade: GuiObject)
 
 	upgradeActivatedConnection = upgrade.Activated:Connect(requestUpgrade)
 	sellActivatedConnection = sell.Activated:Connect(requestSell)
+	targetingInputConnection = targeting.InputBegan:Connect(onTargetingInput)
 end
 
 function TowerMenuUI.Show(model: Model)
@@ -247,6 +332,7 @@ function TowerMenuUI.Show(model: Model)
 
 	selectedModel = model
 	levelChangedConnection = model:GetAttributeChangedSignal("TowerLevel"):Connect(update)
+	targetModeChangedConnection = model:GetAttributeChangedSignal("TargetMode"):Connect(update)
 	update()
 
 	if menu then
@@ -260,9 +346,15 @@ function TowerMenuUI.Hide()
 		levelChangedConnection = nil
 	end
 
+	if targetModeChangedConnection then
+		targetModeChangedConnection:Disconnect()
+		targetModeChangedConnection = nil
+	end
+
 	selectedModel = nil
 	setUpgradeEnabled(false)
 	setSellEnabled(false)
+	setTargetingEnabled(false)
 
 	if menu then
 		menu.Visible = false
@@ -282,9 +374,15 @@ function TowerMenuUI.Stop()
 		sellActivatedConnection = nil
 	end
 
+	if targetingInputConnection then
+		targetingInputConnection:Disconnect()
+		targetingInputConnection = nil
+	end
+
 	menu = nil
 	titleLabel = nil
 	ownerLabel = nil
+	targetingLabel = nil
 	currentDamageLabel = nil
 	currentRangeLabel = nil
 	currentCooldownLabel = nil
@@ -297,6 +395,7 @@ function TowerMenuUI.Stop()
 	sellAmountLabel = nil
 	upgradeRequestInFlight = false
 	sellRequestInFlight = false
+	targetModeRequestInFlight = false
 end
 
 return TowerMenuUI
