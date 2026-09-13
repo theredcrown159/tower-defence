@@ -13,6 +13,9 @@ export type WaveState = "Stopped" | "Ready" | "Spawning" | "WaitingForEnemies" |
 
 local WaveService = {}
 
+local MATCH_STATE_NAME = "MatchState"
+local WAVE_ATTRIBUTE = "Wave"
+
 local waveStartedEvent = Instance.new("BindableEvent")
 WaveService.WaveStarted = waveStartedEvent.Event
 
@@ -29,6 +32,28 @@ local spawnedInCurrentGroup = 0
 local timeUntilNextSpawn = 0
 local intermissionRemaining = 0
 local simulationConnection: RBXScriptConnection? = nil
+
+local function getMatchState(): Folder
+	local existing = ReplicatedStorage:FindFirstChild(MATCH_STATE_NAME)
+
+	if existing then
+		if not existing:IsA("Folder") then
+			error(`ReplicatedStorage.{MATCH_STATE_NAME} must be a Folder`)
+		end
+
+		return existing
+	end
+
+	local matchState = Instance.new("Folder")
+	matchState.Name = MATCH_STATE_NAME
+	matchState.Parent = ReplicatedStorage
+
+	return matchState
+end
+
+local function replicateWave()
+	getMatchState():SetAttribute(WAVE_ATTRIBUTE, currentWaveIndex)
+end
 
 local function validateDefinitions()
 	if #WaveDefinitions == 0 then
@@ -138,6 +163,7 @@ local function startNextWave(): boolean
 	timeUntilNextSpawn = 0
 	intermissionRemaining = 0
 	state = "Spawning"
+	replicateWave()
 
 	waveStartedEvent:Fire(currentWaveIndex)
 
@@ -199,6 +225,7 @@ function WaveService.Start(): boolean
 
 	state = if currentWaveIndex >= #WaveDefinitions then "Finished" else "Ready"
 	simulationConnection = SimulationService.Stepped:Connect(onSimulationStep)
+	replicateWave()
 
 	return true
 end
@@ -226,6 +253,7 @@ function WaveService.Reset(): boolean
 	timeUntilNextSpawn = 0
 	intermissionRemaining = 0
 	state = "Stopped"
+	replicateWave()
 
 	return true
 end
