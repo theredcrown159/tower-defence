@@ -144,4 +144,14 @@ function Tower.GetCost(self: Tower): number
 	return getCurrentLevel(self).Cost
 end
 
+function Tower.GetTotalCost(self: Tower): number
+	local totalCost = 0
+
+	for levelIndex = 1, self._level do
+		totalCost += self._definition.Levels[levelIndex].Cost
+	end
+
+	return totalCost
+end
+
 return Tower

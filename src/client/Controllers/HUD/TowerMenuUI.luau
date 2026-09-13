@@ -3,9 +3,11 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local GameConfig = require(ReplicatedStorage.Shared.Config.GameConfig)
 local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinitions)
 
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
+local sellFunction = towerRemotes:WaitForChild("Sell") :: RemoteFunction
 local upgradeFunction = towerRemotes:WaitForChild("Upgrade") :: RemoteFunction
 
 local TowerMenuUI = {}
@@ -21,10 +23,14 @@ local nextRangeLabel: TextLabel? = nil
 local nextCooldownLabel: TextLabel? = nil
 local upgradeButton: GuiButton? = nil
 local upgradeCostLabel: TextLabel? = nil
+local sellButton: GuiButton? = nil
+local sellAmountLabel: TextLabel? = nil
 local selectedModel: Model? = nil
 local levelChangedConnection: RBXScriptConnection? = nil
 local upgradeActivatedConnection: RBXScriptConnection? = nil
+local sellActivatedConnection: RBXScriptConnection? = nil
 local upgradeRequestInFlight = false
+local sellRequestInFlight = false
 
 local function getOwnerName(ownerUserId: number): string
 	local owner = Players:GetPlayerByUserId(ownerUserId)
@@ -44,6 +50,31 @@ local function setUpgradeEnabled(enabled: boolean)
 	end
 end
 
+local function setSellEnabled(enabled: boolean)
+	if sellButton then
+		sellButton.Active = enabled
+		sellButton.Interactable = enabled
+		sellButton.AutoButtonColor = enabled
+	end
+end
+
+local function getSellAmount(towerName: string, level: number): number
+	local definition = TowerDefinitions[towerName]
+
+	if not definition then
+		return 0
+	end
+
+	local currentLevel = math.clamp(math.floor(level), 1, #definition.Levels)
+	local totalCost = 0
+
+	for levelIndex = 1, currentLevel do
+		totalCost += definition.Levels[levelIndex].Cost
+	end
+
+	return math.floor(totalCost * GameConfig.TowerSellRefundRate)
+end
+
 local function update()
 	local model = selectedModel
 
@@ -59,6 +90,7 @@ local function update()
 		or not nextRangeLabel
 		or not nextCooldownLabel
 		or not upgradeCostLabel
+		or not sellAmountLabel
 	then
 		return
 	end
@@ -100,13 +132,17 @@ local function update()
 	end
 
 	local isOwner = ownerUserId == Players.LocalPlayer.UserId
-	setUpgradeEnabled(isOwner and nextLevel ~= nil and not upgradeRequestInFlight)
+	local requestInFlight = upgradeRequestInFlight or sellRequestInFlight
+
+	sellAmountLabel.Text = tostring(getSellAmount(towerName, currentLevelIndex))
+	setUpgradeEnabled(isOwner and nextLevel ~= nil and not requestInFlight)
+	setSellEnabled(isOwner and not requestInFlight)
 end
 
 local function requestUpgrade()
 	local model = selectedModel
 
-	if not model or upgradeRequestInFlight then
+	if not model or upgradeRequestInFlight or sellRequestInFlight then
 		return
 	end
 
@@ -145,9 +181,46 @@ local function requestUpgrade()
 	end
 end
 
+local function requestSell()
+	local model = selectedModel
+
+	if not model or upgradeRequestInFlight or sellRequestInFlight then
+		return
+	end
+
+	local towerId = model:GetAttribute("TowerId")
+	local ownerUserId = model:GetAttribute("OwnerUserId")
+
+	if typeof(towerId) ~= "number" or typeof(ownerUserId) ~= "number" or ownerUserId ~= Players.LocalPlayer.UserId then
+		return
+	end
+
+	sellRequestInFlight = true
+	update()
+	local requestSucceeded, wasSoldOrError = pcall(function()
+		return sellFunction:InvokeServer(towerId)
+	end)
+	sellRequestInFlight = false
+
+	if not requestSucceeded then
+		warn(`Tower sell request failed: {wasSoldOrError}`)
+		update()
+		return
+	end
+
+	if wasSoldOrError == true then
+		if selectedModel == model then
+			TowerMenuUI.Hide()
+		end
+	else
+		update()
+	end
+end
+
 function TowerMenuUI.Start(unitUpgrade: GuiObject)
 	local main = unitUpgrade:WaitForChild("Main")
 	local upgrade = unitUpgrade:WaitForChild("Upgrade") :: GuiButton
+	local sell = unitUpgrade:WaitForChild("Sell") :: GuiButton
 
 	menu = unitUpgrade
 	titleLabel = unitUpgrade:WaitForChild("Title") :: TextLabel
@@ -160,10 +233,13 @@ function TowerMenuUI.Start(unitUpgrade: GuiObject)
 	nextCooldownLabel = main:WaitForChild("NewCool") :: TextLabel
 	upgradeButton = upgrade
 	upgradeCostLabel = upgrade:WaitForChild("Cost") :: TextLabel
+	sellButton = sell
+	sellAmountLabel = sell:WaitForChild("TextLabel") :: TextLabel
 	unitUpgrade.Active = true
 	unitUpgrade.Visible = false
 
 	upgradeActivatedConnection = upgrade.Activated:Connect(requestUpgrade)
+	sellActivatedConnection = sell.Activated:Connect(requestSell)
 end
 
 function TowerMenuUI.Show(model: Model)
@@ -186,6 +262,7 @@ function TowerMenuUI.Hide()
 
 	selectedModel = nil
 	setUpgradeEnabled(false)
+	setSellEnabled(false)
 
 	if menu then
 		menu.Visible = false
@@ -200,6 +277,11 @@ function TowerMenuUI.Stop()
 		upgradeActivatedConnection = nil
 	end
 
+	if sellActivatedConnection then
+		sellActivatedConnection:Disconnect()
+		sellActivatedConnection = nil
+	end
+
 	menu = nil
 	titleLabel = nil
 	ownerLabel = nil
@@ -211,6 +293,10 @@ function TowerMenuUI.Stop()
 	nextCooldownLabel = nil
 	upgradeButton = nil
 	upgradeCostLabel = nil
+	sellButton = nil
+	sellAmountLabel = nil
+	upgradeRequestInFlight = false
+	sellRequestInFlight = false
 end
 
 return TowerMenuUI

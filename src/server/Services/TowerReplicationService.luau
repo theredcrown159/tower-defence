@@ -14,6 +14,7 @@ local removedEvent = towerRemotes:WaitForChild("Removed")
 local combatEvent = towerRemotes:WaitForChild("Attacked")
 local placeFunction = towerRemotes:WaitForChild("Place")
 local readyEvent = towerRemotes:WaitForChild("Ready")
+local sellFunction = towerRemotes:WaitForChild("Sell")
 local upgradeFunction = towerRemotes:WaitForChild("Upgrade")
 local upgradedEvent = towerRemotes:WaitForChild("Upgraded")
 
@@ -79,6 +80,14 @@ local function onUpgradeRequested(player: Player, towerId: unknown): boolean
 	return TowerService.TryUpgrade(player, towerId)
 end
 
+local function onSellRequested(player: Player, towerId: unknown): boolean
+	if typeof(towerId) ~= "number" or towerId <= 0 or towerId % 1 ~= 0 then
+		return false
+	end
+
+	return TowerService.TrySell(player, towerId)
+end
+
 local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number, level: number)
 	for player in readyPlayers do
 		if player:IsDescendantOf(Players) then
@@ -140,6 +149,7 @@ function TowerReplicationService.Start(): boolean
 	table.insert(connections, TowerService.TowerAttacked:Connect(onTowerAttacked))
 	table.insert(connections, TowerService.TowerUpgraded:Connect(onTowerUpgraded))
 	placeFunction.OnServerInvoke = onPlaceRequested
+	sellFunction.OnServerInvoke = onSellRequested
 	upgradeFunction.OnServerInvoke = onUpgradeRequested
 
 	started = true
@@ -159,6 +169,7 @@ function TowerReplicationService.Stop(): boolean
 	table.clear(connections)
 	table.clear(readyPlayers)
 	placeFunction.OnServerInvoke = nil
+	sellFunction.OnServerInvoke = nil
 	upgradeFunction.OnServerInvoke = nil
 	started = false
 

@@ -8,4 +8,5 @@ return {
 	WaveIntermissionDuration = 10,
 	SkipVoteDuration = 20,
 	MinimumTowerDistance = 4,
+	TowerSellRefundRate = 0.5,
 }

@@ -209,6 +209,28 @@ function TowerService.TryUpgrade(player: Player, towerId: number): boolean
 	return true
 end
 
+function TowerService.TrySell(player: Player, towerId: number): boolean
+	if not simulationConnection then
+		return false
+	end
+
+	local tower = activeTowers[towerId]
+
+	if not tower or tower:GetOwnerUserId() ~= player.UserId then
+		return false
+	end
+
+	local refund = math.floor(tower:GetTotalCost() * GameConfig.TowerSellRefundRate)
+
+	if not TowerService.Remove(towerId) then
+		return false
+	end
+
+	EconomyService.AddMoney(player.UserId, refund)
+
+	return true
+end
+
 function TowerService.GetById(id: number): TowerType?
 	return activeTowers[id]
 end
@@ -268,6 +290,10 @@ function TowerService.Start(): boolean
 
 	if not EnemyService.IsRunning() then
 		error("TowerService cannot start before EnemyService")
+	end
+
+	if GameConfig.TowerSellRefundRate < 0 or GameConfig.TowerSellRefundRate > 1 then
+		error("GameConfig.TowerSellRefundRate must be between 0 and 1")
 	end
 
 	simulationConnection = SimulationService.Stepped:Connect(onSimulationStep)
