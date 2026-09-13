@@ -9,12 +9,14 @@ local SimulationService = require(script.Parent.SimulationService)
 local WaveDefinitions = require(ReplicatedStorage.Shared.Config.WaveDefinitions)
 
 type EnemyGroup = WaveDefinitions.EnemyGroup
+type WaveDefinition = WaveDefinitions.WaveDefinition
 export type WaveState = "Stopped" | "Ready" | "Spawning" | "WaitingForEnemies" | "Intermission" | "Finished"
 
 local WaveService = {}
 
 local MATCH_STATE_NAME = "MatchState"
 local WAVE_ATTRIBUTE = "Wave"
+local TIME_REMAINING_ATTRIBUTE = "TimeRemaining"
 
 local waveStartedEvent = Instance.new("BindableEvent")
 WaveService.WaveStarted = waveStartedEvent.Event
@@ -30,8 +32,12 @@ local currentWaveIndex = 0
 local currentGroupIndex = 0
 local spawnedInCurrentGroup = 0
 local timeUntilNextSpawn = 0
+local waveTimeRemaining = 0
 local intermissionRemaining = 0
+local currentWaveEnemyIds: { [number]: boolean } = {}
+local currentWaveEnemyCount = 0
 local simulationConnection: RBXScriptConnection? = nil
+local enemyRemovedConnection: RBXScriptConnection? = nil
 
 local function getMatchState(): Folder
 	local existing = ReplicatedStorage:FindFirstChild(MATCH_STATE_NAME)
@@ -55,15 +61,30 @@ local function replicateWave()
 	getMatchState():SetAttribute(WAVE_ATTRIBUTE, currentWaveIndex)
 end
 
+local function replicateTimeRemaining(seconds: number)
+	local displayedSeconds = math.max(0, math.ceil(seconds))
+	local matchState = getMatchState()
+
+	if matchState:GetAttribute(TIME_REMAINING_ATTRIBUTE) ~= displayedSeconds then
+		matchState:SetAttribute(TIME_REMAINING_ATTRIBUTE, displayedSeconds)
+	end
+end
+
 local function validateDefinitions()
 	if #WaveDefinitions == 0 then
 		error("WaveDefinitions must contain at least one wave")
 	end
 
 	for waveIndex, wave in ipairs(WaveDefinitions) do
+		if wave.Duration <= 0 then
+			error(`Wave {waveIndex}: Duration must be greater than zero`)
+		end
+
 		if #wave.Groups == 0 then
 			error(`Wave {waveIndex} must contain at least one enemy group`)
 		end
+
+		local spawnDuration = 0
 
 		for groupIndex, group in ipairs(wave.Groups) do
 			if not EnemyDefinitions[group.EnemyName] then
@@ -77,12 +98,22 @@ local function validateDefinitions()
 			if group.SpawnInterval < 0 then
 				error(`Wave {waveIndex}, group {groupIndex}: SpawnInterval cannot be negative`)
 			end
+
+			spawnDuration += (group.Count - 1) * group.SpawnInterval
+		end
+
+		if wave.Duration <= spawnDuration then
+			error(`Wave {waveIndex}: Duration must be longer than its spawn schedule`)
 		end
 	end
 end
 
+local function getCurrentWave(): WaveDefinition?
+	return WaveDefinitions[currentWaveIndex]
+end
+
 local function getCurrentGroup(): EnemyGroup?
-	local wave = WaveDefinitions[currentWaveIndex]
+	local wave = getCurrentWave()
 
 	if not wave then
 		return nil
@@ -91,14 +122,35 @@ local function getCurrentGroup(): EnemyGroup?
 	return wave.Groups[currentGroupIndex]
 end
 
-local function finishWave()
+local function clearCurrentWaveTracking()
+	currentWaveEnemyIds = {}
+	currentWaveEnemyCount = 0
+end
+
+local function onEnemyRemoved(
+	enemyId: number,
+	_reason: EnemyService.RemovalReason,
+	_baseDamage: number,
+	_reward: number
+)
+	if not currentWaveEnemyIds[enemyId] then
+		return
+	end
+
+	currentWaveEnemyIds[enemyId] = nil
+	currentWaveEnemyCount -= 1
+end
+
+local function finishWave(withIntermission: boolean)
 	local completedWaveIndex = currentWaveIndex
 
 	if completedWaveIndex >= #WaveDefinitions then
 		state = "Finished"
+		replicateTimeRemaining(0)
 	else
-		state = "Intermission"
-		intermissionRemaining = GameConfig.WaveIntermissionDuration
+		state = if withIntermission then "Intermission" else "Ready"
+		intermissionRemaining = if withIntermission then GameConfig.WaveIntermissionDuration else 0
+		replicateTimeRemaining(intermissionRemaining)
 	end
 
 	waveCompletedEvent:Fire(completedWaveIndex)
@@ -130,7 +182,9 @@ local function spawnReadyEnemies(fixedDeltaTime: number)
 			break
 		end
 
-		EnemyService.Spawn(group.EnemyName)
+		local enemyId = EnemyService.Spawn(group.EnemyName)
+		currentWaveEnemyIds[enemyId] = true
+		currentWaveEnemyCount += 1
 		spawnedInCurrentGroup += 1
 
 		if spawnedInCurrentGroup >= group.Count then
@@ -146,14 +200,10 @@ local function startNextWave(): boolean
 		return false
 	end
 
-	if EnemyService.GetCount() > 0 then
-		return false
-	end
-
 	local nextWaveIndex = currentWaveIndex + 1
+	local nextWave = WaveDefinitions[nextWaveIndex]
 
-	if not WaveDefinitions[nextWaveIndex] then
-		state = "Finished"
+	if not nextWave then
 		return false
 	end
 
@@ -161,22 +211,54 @@ local function startNextWave(): boolean
 	currentGroupIndex = 1
 	spawnedInCurrentGroup = 0
 	timeUntilNextSpawn = 0
+	waveTimeRemaining = nextWave.Duration
 	intermissionRemaining = 0
+	clearCurrentWaveTracking()
 	state = "Spawning"
-	replicateWave()
 
+	replicateWave()
+	replicateTimeRemaining(waveTimeRemaining)
 	waveStartedEvent:Fire(currentWaveIndex)
 
 	return true
 end
 
-local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
+local function updateActiveWave(fixedDeltaTime: number)
+	waveTimeRemaining = math.max(0, waveTimeRemaining - fixedDeltaTime)
+	replicateTimeRemaining(waveTimeRemaining)
+
 	if state == "Spawning" then
 		spawnReadyEnemies(fixedDeltaTime)
-	elseif state == "WaitingForEnemies" and EnemyService.GetCount() == 0 then
-		finishWave()
+	end
+
+	if state ~= "WaitingForEnemies" then
+		return
+	end
+
+	local isFinalWave = currentWaveIndex >= #WaveDefinitions
+
+	if isFinalWave then
+		if EnemyService.GetCount() == 0 then
+			finishWave(false)
+		end
+
+		return
+	end
+
+	if currentWaveEnemyCount == 0 then
+		finishWave(true)
+	elseif waveTimeRemaining == 0 then
+		finishWave(false)
+		startNextWave()
+	end
+end
+
+local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
+	if state == "Spawning" or state == "WaitingForEnemies" then
+		updateActiveWave(fixedDeltaTime)
 	elseif state == "Intermission" then
 		intermissionRemaining = math.max(0, intermissionRemaining - fixedDeltaTime)
+		replicateTimeRemaining(intermissionRemaining)
 
 		if intermissionRemaining == 0 then
 			startNextWave()
@@ -194,6 +276,10 @@ end
 
 function WaveService.GetWaveCount(): number
 	return #WaveDefinitions
+end
+
+function WaveService.GetWaveTimeRemaining(): number
+	return waveTimeRemaining
 end
 
 function WaveService.GetIntermissionRemaining(): number
@@ -224,8 +310,10 @@ function WaveService.Start(): boolean
 	validateDefinitions()
 
 	state = if currentWaveIndex >= #WaveDefinitions then "Finished" else "Ready"
+	enemyRemovedConnection = EnemyService.EnemyRemoved:Connect(onEnemyRemoved)
 	simulationConnection = SimulationService.Stepped:Connect(onSimulationStep)
 	replicateWave()
+	replicateTimeRemaining(0)
 
 	return true
 end
@@ -237,7 +325,14 @@ function WaveService.Stop(): boolean
 
 	simulationConnection:Disconnect()
 	simulationConnection = nil
+
+	if enemyRemovedConnection then
+		enemyRemovedConnection:Disconnect()
+		enemyRemovedConnection = nil
+	end
+
 	state = "Stopped"
+	replicateTimeRemaining(0)
 
 	return true
 end
@@ -251,9 +346,12 @@ function WaveService.Reset(): boolean
 	currentGroupIndex = 0
 	spawnedInCurrentGroup = 0
 	timeUntilNextSpawn = 0
+	waveTimeRemaining = 0
 	intermissionRemaining = 0
+	clearCurrentWaveTracking()
 	state = "Stopped"
 	replicateWave()
+	replicateTimeRemaining(0)
 
 	return true
 end
