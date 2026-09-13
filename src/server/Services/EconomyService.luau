@@ -5,13 +5,26 @@ local Players = game:GetService("Players")
 local EconomyService = {}
 
 local STARTING_MONEY = 500
+local MONEY_ATTRIBUTE = "Money"
 
 local balances: { [number]: number } = {}
 local started = false
 
+local function setMoney(userId: number, amount: number)
+	balances[userId] = amount
+
+	local player = Players:GetPlayerByUserId(userId)
+
+	if player then
+		player:SetAttribute(MONEY_ATTRIBUTE, amount)
+	end
+end
+
 local function addPlayer(player: Player)
 	if balances[player.UserId] == nil then
-		balances[player.UserId] = STARTING_MONEY
+		setMoney(player.UserId, STARTING_MONEY)
+	else
+		player:SetAttribute(MONEY_ATTRIBUTE, balances[player.UserId])
 	end
 end
 
@@ -30,7 +43,7 @@ function EconomyService.AddMoney(userId: number, amount: number): boolean
 		return false
 	end
 
-	balances[userId] = currentMoney + amount
+	setMoney(userId, currentMoney + amount)
 
 	return true
 end
@@ -52,7 +65,7 @@ function EconomyService.SpendMoney(userId: number, amount: number): boolean
 		return false
 	end
 
-	balances[userId] = currentMoney - amount
+	setMoney(userId, currentMoney - amount)
 
 	return true
 end
