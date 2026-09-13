@@ -17,6 +17,9 @@ type PendingRemoval = {
 
 local EnemyService = {}
 
+local MATCH_STATE_NAME = "MatchState"
+local ENEMY_COUNT_ATTRIBUTE = "EnemyCount"
+
 local enemySpawnedEvent = Instance.new("BindableEvent")
 EnemyService.EnemySpawned = enemySpawnedEvent.Event
 
@@ -26,6 +29,34 @@ EnemyService.EnemyRemoved = enemyRemovedEvent.Event
 local activeEnemies: { [number]: EnemyType } = {}
 local nextEnemyId: number = 0
 local simulationConnection: RBXScriptConnection? = nil
+
+local function getMatchState(): Folder
+	local existing = ReplicatedStorage:FindFirstChild(MATCH_STATE_NAME)
+
+	if existing then
+		if not existing:IsA("Folder") then
+			error(`ReplicatedStorage.{MATCH_STATE_NAME} must be a Folder`)
+		end
+
+		return existing
+	end
+
+	local matchState = Instance.new("Folder")
+	matchState.Name = MATCH_STATE_NAME
+	matchState.Parent = ReplicatedStorage
+
+	return matchState
+end
+
+local function replicateCount()
+	local count = 0
+
+	for _ in activeEnemies do
+		count += 1
+	end
+
+	getMatchState():SetAttribute(ENEMY_COUNT_ATTRIBUTE, count)
+end
 
 local function removeEnemy(id: number, reason: RemovalReason): boolean
 	local enemy = activeEnemies[id]
@@ -38,6 +69,7 @@ local function removeEnemy(id: number, reason: RemovalReason): boolean
 	local reward = enemy:GetReward()
 
 	activeEnemies[id] = nil
+	replicateCount()
 	enemyRemovedEvent:Fire(id, reason, baseDamage, reward)
 
 	return true
@@ -89,6 +121,7 @@ function EnemyService.Spawn(enemyName: string): number
 	local enemyId = nextEnemyId
 
 	activeEnemies[enemyId] = enemy
+	replicateCount()
 	enemySpawnedEvent:Fire(enemyId, enemyName)
 
 	return enemyId
@@ -154,6 +187,7 @@ function EnemyService.Start(): boolean
 	end
 
 	simulationConnection = SimulationService.Stepped:Connect(onSimulationStep)
+	replicateCount()
 
 	return true
 end
