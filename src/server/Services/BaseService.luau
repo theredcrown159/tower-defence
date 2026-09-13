@@ -7,6 +7,10 @@ local EnemyService = require(script.Parent.EnemyService)
 
 local BaseService = {}
 
+local MATCH_STATE_NAME = "MatchState"
+local HEALTH_ATTRIBUTE = "BaseHealth"
+local MAX_HEALTH_ATTRIBUTE = "BaseMaxHealth"
+
 local healthChangedEvent = Instance.new("BindableEvent")
 BaseService.HealthChanged = healthChangedEvent.Event
 
@@ -15,6 +19,30 @@ BaseService.BaseDestroyed = baseDestroyedEvent.Event
 
 local health = BaseConfig.MaxHealth
 local enemyRemovedConnection: RBXScriptConnection? = nil
+
+local function getMatchState(): Folder
+	local existing = ReplicatedStorage:FindFirstChild(MATCH_STATE_NAME)
+
+	if existing then
+		if not existing:IsA("Folder") then
+			error(`ReplicatedStorage.{MATCH_STATE_NAME} must be a Folder`)
+		end
+
+		return existing
+	end
+
+	local matchState = Instance.new("Folder")
+	matchState.Name = MATCH_STATE_NAME
+	matchState.Parent = ReplicatedStorage
+
+	return matchState
+end
+
+local function replicateHealth()
+	local matchState = getMatchState()
+	matchState:SetAttribute(HEALTH_ATTRIBUTE, health)
+	matchState:SetAttribute(MAX_HEALTH_ATTRIBUTE, BaseConfig.MaxHealth)
+end
 
 local function onEnemyRemoved(_enemyId: number, reason: EnemyService.RemovalReason, baseDamage: number, _reward: number)
 	if reason == "ReachedBase" then
@@ -49,6 +77,7 @@ function BaseService.Damage(amount: number): boolean
 
 	local previousHealth = health
 	health = math.max(0, health - amount)
+	replicateHealth()
 
 	healthChangedEvent:Fire(health, previousHealth, BaseConfig.MaxHealth)
 
@@ -69,6 +98,7 @@ function BaseService.Start(): boolean
 	end
 
 	enemyRemovedConnection = EnemyService.EnemyRemoved:Connect(onEnemyRemoved)
+	replicateHealth()
 
 	return true
 end
@@ -91,6 +121,7 @@ function BaseService.Reset(): boolean
 
 	local previousHealth = health
 	health = BaseConfig.MaxHealth
+	replicateHealth()
 
 	if health ~= previousHealth then
 		healthChangedEvent:Fire(health, previousHealth, BaseConfig.MaxHealth)

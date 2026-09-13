@@ -14,6 +14,7 @@ type EnemyType = Enemy.Enemy
 type EnemyPositionSnapshot = {
 	Id: number,
 	Position: Vector3,
+	Health: number,
 }
 
 local enemyRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Enemies")
@@ -32,7 +33,15 @@ local SEND_INTERVAL = NetworkConfig.EnemySnapshotInterval
 local sendAccumulator = 0
 
 local function sendEnemyToPlayer(player: Player, id: number, enemy: EnemyType)
-	spawnedEvent:FireClient(player, id, enemy:GetModelName(), enemy:GetPosition(), Workspace:GetServerTimeNow())
+	spawnedEvent:FireClient(
+		player,
+		id,
+		enemy:GetModelName(),
+		enemy:GetPosition(),
+		Workspace:GetServerTimeNow(),
+		enemy:GetHealth(),
+		enemy:GetMaxHealth()
+	)
 end
 
 local function onPlayerReady(player: Player)
@@ -98,6 +107,7 @@ local function sendPositions()
 		table.insert(positions, {
 			Id = id,
 			Position = enemy:GetPosition(),
+			Health = enemy:GetHealth(),
 		})
 	end
 

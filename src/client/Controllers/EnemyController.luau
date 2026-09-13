@@ -12,6 +12,7 @@ local updatedEvent = enemyRemotes:WaitForChild("Updated")
 
 local enemyModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Enemies")
 
+local EnemyHealthUI = require(script.Parent.EnemyHealthUI)
 local NetworkConfig = require(ReplicatedStorage.Shared.Config.NetworkConfig)
 local PositionBuffer = require(script.Parent.Parent.Util.PositionBuffer)
 
@@ -20,6 +21,7 @@ local EnemyController = {}
 type EnemyPositionSnapshot = {
 	Id: number,
 	Position: Vector3,
+	Health: number,
 }
 
 type FadePart = {
@@ -61,6 +63,8 @@ local function getVisualsFolder(): Folder
 end
 
 local function destroyEnemyVisual(id: number)
+	EnemyHealthUI.Remove(id)
+
 	local model = enemies[id]
 
 	if model then
@@ -99,7 +103,14 @@ local function beginDeath(id: number): boolean
 	return true
 end
 
-local function onEnemySpawned(id: number, modelName: string, position: Vector3, timestamp: number)
+local function onEnemySpawned(
+	id: number,
+	modelName: string,
+	position: Vector3,
+	timestamp: number,
+	health: number,
+	maxHealth: number
+)
 	local template = enemyModels:FindFirstChild(modelName)
 
 	if not template or not template:IsA("Model") then
@@ -112,6 +123,7 @@ local function onEnemySpawned(id: number, modelName: string, position: Vector3, 
 	local model = template:Clone()
 	model:PivotTo(CFrame.new(position))
 	model.Parent = getVisualsFolder()
+	EnemyHealthUI.Create(id, model, modelName, health, maxHealth)
 
 	local buffer: PositionBuffer.Buffer = {}
 	PositionBuffer.Push(buffer, timestamp, position)
@@ -121,6 +133,7 @@ end
 
 local function onEnemyRemoved(id: number, reason: string)
 	if reason == "Dead" then
+		EnemyHealthUI.Remove(id)
 		beginDeath(id)
 		return
 	end
@@ -141,6 +154,8 @@ local function onEnemiesUpdated(positions: { EnemyPositionSnapshot }, timestamp:
 		if buffer then
 			PositionBuffer.Push(buffer, timestamp, snapshot.Position)
 		end
+
+		EnemyHealthUI.Update(id, snapshot.Health)
 	end
 end
 
@@ -244,6 +259,7 @@ function EnemyController.Stop(): boolean
 		destroyEnemyVisual(id)
 	end
 
+	EnemyHealthUI.Clear()
 	table.clear(connections)
 	started = false
 
