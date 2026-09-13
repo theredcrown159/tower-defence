@@ -3,6 +3,7 @@
 return {
 	DefaultSpeed = 1,
 	AllowedSpeeds = { 1, 2, 3 },
+	GameSpeedChangeCooldown = 2,
 	FixedStep = 1 / 30,
 	MaximumStepsPerFrame = 8,
 	WaveIntermissionDuration = 10,
