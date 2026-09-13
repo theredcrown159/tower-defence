@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local EnemyController = require(script.Parent.EnemyController)
+local TowerNameUI = require(script.Parent.TowerNameUI)
 
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
 local placedEvent = towerRemotes:WaitForChild("Placed")
@@ -113,7 +114,7 @@ local function faceTarget(model: Model, targetPosition: Vector3, deltaTime: numb
 	model:PivotTo(pivot:Lerp(targetCFrame, alpha))
 end
 
-local function onTowerPlaced(id: number, modelName: string, position: Vector3, _ownerUserId: number)
+local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number)
 	local template = towerModels:FindFirstChild(modelName)
 
 	if not template or not template:IsA("Model") then
@@ -124,18 +125,24 @@ local function onTowerPlaced(id: number, modelName: string, position: Vector3, _
 	local existing = towers[id]
 
 	if existing then
+		TowerNameUI.Remove(id)
 		existing:Destroy()
 	end
 
 	local model = template:Clone()
+	model:SetAttribute("TowerName", modelName)
+	model:SetAttribute("OwnerUserId", ownerUserId)
 	prepareVisualModel(model)
 	model:PivotTo(CFrame.new(position))
 	model.Parent = getVisualsFolder()
 	towers[id] = model
+	TowerNameUI.Create(id, model, modelName)
 end
 
 local function onTowerRemoved(id: number)
 	local model = towers[id]
+
+	TowerNameUI.Remove(id)
 
 	if model then
 		model:Destroy()
@@ -203,6 +210,7 @@ function TowerController.Start(): boolean
 		return false
 	end
 
+	getVisualsFolder()
 	table.insert(connections, placedEvent.OnClientEvent:Connect(onTowerPlaced))
 	table.insert(connections, removedEvent.OnClientEvent:Connect(onTowerRemoved))
 	table.insert(connections, attackedEvent.OnClientEvent:Connect(onTowerPacket))
@@ -222,6 +230,8 @@ function TowerController.Stop(): boolean
 	for _, connection in connections do
 		connection:Disconnect()
 	end
+
+	TowerNameUI.Clear()
 
 	for id, model in towers do
 		model:Destroy()
