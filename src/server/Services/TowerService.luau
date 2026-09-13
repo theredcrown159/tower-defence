@@ -161,13 +161,43 @@ function TowerService.TryPlace(player: Player, towerName: string, requestedPosit
 		return false
 	end
 
-	if not EconomyService.SpendMoney(player.UserId, definition.Cost) then
+	local firstLevel = definition.Levels[1]
+
+	if not firstLevel then
+		return false
+	end
+
+	if not EconomyService.SpendMoney(player.UserId, firstLevel.Cost) then
 		return false
 	end
 
 	place(towerName, position, player.UserId)
 
 	return true
+end
+
+function TowerService.TryUpgrade(player: Player, towerId: number): boolean
+	if not simulationConnection then
+		return false
+	end
+
+	local tower = activeTowers[towerId]
+
+	if not tower or tower:GetOwnerUserId() ~= player.UserId then
+		return false
+	end
+
+	local upgradeCost = tower:GetUpgradeCost()
+
+	if not upgradeCost then
+		return false
+	end
+
+	if not EconomyService.SpendMoney(player.UserId, upgradeCost) then
+		return false
+	end
+
+	return tower:Upgrade()
 end
 
 function TowerService.GetById(id: number): TowerType?

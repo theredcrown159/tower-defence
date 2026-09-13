@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinitions)
 
 type TowerDefinition = TowerDefinitions.TowerDefinition
+type TowerLevelDefinition = TowerDefinitions.TowerLevelDefinition
 
 local Tower = {}
 Tower.__index = Tower
@@ -15,25 +16,42 @@ export type Tower = typeof(setmetatable(
 		_position: Vector3,
 		_ownerUserId: number,
 		_cooldownRemaining: number,
+		_level: number,
 	},
 	Tower
 ))
 
+local function getCurrentLevel(self: Tower): TowerLevelDefinition
+	local level = self._definition.Levels[self._level]
+
+	if not level then
+		error("Tower current level is invalid")
+	end
+
+	return level
+end
+
 function Tower.new(definition: TowerDefinition, position: Vector3, ownerUserId: number): Tower
-	if definition.Damage <= 0 then
-		error("Tower Damage must be greater than zero")
+	if #definition.Levels == 0 then
+		error("Tower must have at least one level")
 	end
 
-	if definition.Range <= 0 then
-		error("Tower Range must be greater than zero")
-	end
+	for levelIndex, level in ipairs(definition.Levels) do
+		if level.Damage <= 0 then
+			error("Tower level " .. levelIndex .. " Damage must be greater than zero")
+		end
 
-	if definition.AttackCooldown <= 0 then
-		error("Tower AttackCooldown must be greater than zero")
-	end
+		if level.Range <= 0 then
+			error("Tower level " .. levelIndex .. " Range must be greater than zero")
+		end
 
-	if definition.Cost < 0 then
-		error("Tower Cost cannot be negative")
+		if level.AttackCooldown <= 0 then
+			error("Tower level " .. levelIndex .. " AttackCooldown must be greater than zero")
+		end
+
+		if level.Cost < 0 then
+			error("Tower level " .. levelIndex .. " Cost cannot be negative")
+		end
 	end
 
 	local self: Tower = setmetatable({
@@ -41,6 +59,7 @@ function Tower.new(definition: TowerDefinition, position: Vector3, ownerUserId: 
 		_position = position,
 		_ownerUserId = ownerUserId,
 		_cooldownRemaining = 0,
+		_level = 1,
 	}, Tower)
 
 	return self
@@ -63,7 +82,7 @@ function Tower.TriggerAttack(self: Tower): boolean
 		return false
 	end
 
-	self._cooldownRemaining = self._definition.AttackCooldown
+	self._cooldownRemaining = self:GetAttackCooldown()
 
 	return true
 end
@@ -80,16 +99,41 @@ function Tower.GetModelName(self: Tower): string
 	return self._definition.ModelName
 end
 
+function Tower.GetLevel(self: Tower): number
+	return self._level
+end
+
+function Tower.GetMaxLevel(self: Tower): number
+	return #self._definition.Levels
+end
+
+function Tower.GetUpgradeCost(self: Tower): number?
+	local nextLevel = self._definition.Levels[self._level + 1]
+
+	return if nextLevel then nextLevel.Cost else nil
+end
+
+function Tower.Upgrade(self: Tower): boolean
+	if self._level >= self:GetMaxLevel() then
+		return false
+	end
+
+	self._level += 1
+	self._cooldownRemaining = math.min(self._cooldownRemaining, self:GetAttackCooldown())
+
+	return true
+end
+
 function Tower.GetDamage(self: Tower): number
-	return self._definition.Damage
+	return getCurrentLevel(self).Damage
 end
 
 function Tower.GetRange(self: Tower): number
-	return self._definition.Range
+	return getCurrentLevel(self).Range
 end
 
 function Tower.GetAttackCooldown(self: Tower): number
-	return self._definition.AttackCooldown
+	return getCurrentLevel(self).AttackCooldown
 end
 
 function Tower.GetCooldownRemaining(self: Tower): number
@@ -97,7 +141,7 @@ function Tower.GetCooldownRemaining(self: Tower): number
 end
 
 function Tower.GetCost(self: Tower): number
-	return self._definition.Cost
+	return getCurrentLevel(self).Cost
 end
 
 return Tower
