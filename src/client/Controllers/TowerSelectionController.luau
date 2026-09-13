@@ -1,5 +1,6 @@
 --!strict
 
+local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -7,60 +8,62 @@ local HUDController = require(script.Parent.HUDController)
 
 local TowerSelectionController = {}
 
+type DetectorRecord = {
+	Detector: ClickDetector,
+	Connection: RBXScriptConnection,
+}
+
+local detectors: { [Model]: DetectorRecord } = {}
 local connections: { RBXScriptConnection } = {}
-local towerVisuals: Folder? = nil
 local selectedTower: Model? = nil
 local started = false
 
-local RAY_DISTANCE = 2000
+local MAX_ACTIVATION_DISTANCE = 100
 
-local raycastParams = RaycastParams.new()
-raycastParams.FilterType = Enum.RaycastFilterType.Include
-
-local function getTowerModel(instance: Instance): Model?
-	local folder = towerVisuals
-	local current: Instance? = instance
-
-	if not folder then
-		return nil
-	end
-
-	while current and current.Parent ~= folder do
-		current = current.Parent
-	end
-
-	return if current and current:IsA("Model") then current else nil
+local function hideSelection()
+	selectedTower = nil
+	HUDController.HideTowerMenu()
 end
 
-local function selectAt(screenPosition: Vector3)
-	local folder = towerVisuals
-	local camera = Workspace.CurrentCamera
+local function selectTower(model: Model)
+	selectedTower = model
+	HUDController.ShowTowerMenu(model)
+end
 
-	if not folder or not camera then
-		return
+function TowerSelectionController.Unregister(model: Model)
+	local record = detectors[model]
+
+	if record then
+		record.Connection:Disconnect()
+		record.Detector:Destroy()
+		detectors[model] = nil
 	end
 
-	raycastParams.FilterDescendantsInstances = { folder }
-
-	local ray = camera:ViewportPointToRay(screenPosition.X, screenPosition.Y)
-	local result = Workspace:Raycast(ray.Origin, ray.Direction * RAY_DISTANCE, raycastParams)
-	local tower = if result then getTowerModel(result.Instance) else nil
-
-	if not tower then
-		selectedTower = nil
-		HUDController.HideTowerMenu()
-		return
+	if selectedTower == model then
+		hideSelection()
 	end
+end
 
-	local towerName = tower:GetAttribute("TowerName")
-	local ownerUserId = tower:GetAttribute("OwnerUserId")
+function TowerSelectionController.Register(model: Model)
+	TowerSelectionController.Unregister(model)
 
-	if typeof(towerName) ~= "string" or typeof(ownerUserId) ~= "number" then
-		return
-	end
+	local detector = Instance.new("ClickDetector")
+	detector.Name = "TowerClickDetector"
+	detector.MaxActivationDistance = MAX_ACTIVATION_DISTANCE
+	detector.Parent = model
 
-	selectedTower = tower
-	HUDController.ShowTowerMenu(towerName, ownerUserId)
+	local connection = detector.MouseClick:Connect(function(playerWhoClicked: Player)
+		if playerWhoClicked ~= Players.LocalPlayer or Workspace:FindFirstChild("TowerPreview") then
+			return
+		end
+
+		selectTower(model)
+	end)
+
+	detectors[model] = {
+		Detector = detector,
+		Connection = connection,
+	}
 end
 
 local function onInputBegan(input: InputObject, gameProcessed: boolean)
@@ -69,8 +72,7 @@ local function onInputBegan(input: InputObject, gameProcessed: boolean)
 	end
 
 	if input.KeyCode == Enum.KeyCode.Escape then
-		selectedTower = nil
-		HUDController.HideTowerMenu()
+		hideSelection()
 		return
 	end
 
@@ -78,14 +80,7 @@ local function onInputBegan(input: InputObject, gameProcessed: boolean)
 		or input.UserInputType == Enum.UserInputType.Touch
 
 	if isPointerInput and not Workspace:FindFirstChild("TowerPreview") then
-		selectAt(input.Position)
-	end
-end
-
-local function onTowerRemoved(child: Instance)
-	if child == selectedTower then
-		selectedTower = nil
-		HUDController.HideTowerMenu()
+		hideSelection()
 	end
 end
 
@@ -94,9 +89,7 @@ function TowerSelectionController.Start(): boolean
 		return false
 	end
 
-	towerVisuals = Workspace:WaitForChild("TowerVisuals") :: Folder
 	table.insert(connections, UserInputService.InputBegan:Connect(onInputBegan))
-	table.insert(connections, towerVisuals.ChildRemoved:Connect(onTowerRemoved))
 	started = true
 
 	return true
@@ -111,10 +104,17 @@ function TowerSelectionController.Stop(): boolean
 		connection:Disconnect()
 	end
 
+	local models: { Model } = {}
+	for model in detectors do
+		table.insert(models, model)
+	end
+
+	for _, model in models do
+		TowerSelectionController.Unregister(model)
+	end
+
 	table.clear(connections)
-	selectedTower = nil
-	towerVisuals = nil
-	HUDController.HideTowerMenu()
+	hideSelection()
 	started = false
 
 	return true

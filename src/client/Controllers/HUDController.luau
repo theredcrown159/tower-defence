@@ -34,8 +34,8 @@ function HUDController.SetBaseHealth(health: number, maxHealth: number)
 	BaseHealthUI.Set(health, maxHealth)
 end
 
-function HUDController.ShowTowerMenu(towerName: string, ownerUserId: number)
-	TowerMenuUI.Show(towerName, ownerUserId)
+function HUDController.ShowTowerMenu(model: Model)
+	TowerMenuUI.Show(model)
 end
 
 function HUDController.HideTowerMenu()

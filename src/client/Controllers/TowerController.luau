@@ -5,13 +5,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local AnimationPlayer = require(script.Parent.Parent.Util.AnimationPlayer)
 local EnemyController = require(script.Parent.EnemyController)
 local TowerNameUI = require(script.Parent.TowerNameUI)
+local TowerSelectionController = require(script.Parent.TowerSelectionController)
 
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
 local placedEvent = towerRemotes:WaitForChild("Placed")
 local removedEvent = towerRemotes:WaitForChild("Removed")
 local attackedEvent = towerRemotes:WaitForChild("Attacked")
+local upgradedEvent = towerRemotes:WaitForChild("Upgraded")
 local readyEvent = towerRemotes:WaitForChild("Ready")
 
 local towerModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Towers")
@@ -25,6 +28,7 @@ type TowerPacket = {
 }
 
 local towers: { [number]: Model } = {}
+local attackTracks: { [number]: AnimationTrack } = {}
 local towerTargets: { [number]: number } = {}
 local connections: { RBXScriptConnection } = {}
 local started = false
@@ -34,6 +38,7 @@ local TURN_SPEED = 12
 local TOWER_YAW_OFFSET = CFrame.Angles(0, 0, 0)
 local BEAM_LIFETIME = 0.15
 local BEAM_WIDTH = 0.12
+local ATTACK_ANIMATION_ID = "100594661450640"
 
 local function getVisualsFolder(): Folder
 	local existing = Workspace:FindFirstChild("TowerVisuals")
@@ -54,9 +59,11 @@ local function getVisualsFolder(): Folder
 end
 
 local function prepareVisualModel(model: Model)
+	local rootPart = model:FindFirstChild("HumanoidRootPart", true)
+
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
-			descendant.Anchored = true
+			descendant.Anchored = descendant == rootPart
 			descendant.CanCollide = false
 			descendant.CanTouch = false
 		end
@@ -114,7 +121,7 @@ local function faceTarget(model: Model, targetPosition: Vector3, deltaTime: numb
 	model:PivotTo(pivot:Lerp(targetCFrame, alpha))
 end
 
-local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number)
+local function onTowerPlaced(id: number, modelName: string, position: Vector3, ownerUserId: number, level: number)
 	local template = towerModels:FindFirstChild(modelName)
 
 	if not template or not template:IsA("Model") then
@@ -125,38 +132,79 @@ local function onTowerPlaced(id: number, modelName: string, position: Vector3, o
 	local existing = towers[id]
 
 	if existing then
+		AnimationPlayer.Stop(attackTracks[id])
+		attackTracks[id] = nil
 		TowerNameUI.Remove(id)
+		TowerSelectionController.Unregister(existing)
 		existing:Destroy()
 	end
 
 	local model = template:Clone()
+	model:SetAttribute("TowerId", id)
 	model:SetAttribute("TowerName", modelName)
 	model:SetAttribute("OwnerUserId", ownerUserId)
+	model:SetAttribute("TowerLevel", level)
 	prepareVisualModel(model)
 	model:PivotTo(CFrame.new(position))
 	model.Parent = getVisualsFolder()
 	towers[id] = model
 	TowerNameUI.Create(id, model, modelName)
+	TowerSelectionController.Register(model)
+
+	local attackTrack = AnimationPlayer.Load(model, ATTACK_ANIMATION_ID, false, Enum.AnimationPriority.Action)
+
+	if attackTrack then
+		attackTracks[id] = attackTrack
+	end
+end
+
+local function onTowerUpgraded(id: number, level: number)
+	local model = towers[id]
+
+	if model then
+		model:SetAttribute("TowerLevel", level)
+	end
 end
 
 local function onTowerRemoved(id: number)
 	local model = towers[id]
 
+	AnimationPlayer.Stop(attackTracks[id])
 	TowerNameUI.Remove(id)
 
 	if model then
+		TowerSelectionController.Unregister(model)
 		model:Destroy()
 	end
 
 	towers[id] = nil
+	attackTracks[id] = nil
 	towerTargets[id] = nil
+end
+
+local function playAttackAnimation(towerId: number)
+	local attackTrack = attackTracks[towerId]
+
+	if not attackTrack then
+		return
+	end
+
+	attackTrack:Stop(0)
+	attackTrack:Play(0)
 end
 
 local function showAttack(towerId: number, targetId: number)
 	local towerModel = towers[towerId]
+
+	if not towerModel then
+		return
+	end
+
+	playAttackAnimation(towerId)
+
 	local enemyModel = EnemyController.GetModel(targetId)
 
-	if not towerModel or not enemyModel then
+	if not enemyModel then
 		return
 	end
 
@@ -214,6 +262,7 @@ function TowerController.Start(): boolean
 	table.insert(connections, placedEvent.OnClientEvent:Connect(onTowerPlaced))
 	table.insert(connections, removedEvent.OnClientEvent:Connect(onTowerRemoved))
 	table.insert(connections, attackedEvent.OnClientEvent:Connect(onTowerPacket))
+	table.insert(connections, upgradedEvent.OnClientEvent:Connect(onTowerUpgraded))
 	table.insert(connections, RunService.RenderStepped:Connect(onRenderStep))
 	started = true
 
@@ -234,8 +283,11 @@ function TowerController.Stop(): boolean
 	TowerNameUI.Clear()
 
 	for id, model in towers do
+		AnimationPlayer.Stop(attackTracks[id])
+		TowerSelectionController.Unregister(model)
 		model:Destroy()
 		towers[id] = nil
+		attackTracks[id] = nil
 	end
 
 	table.clear(towerTargets)
