@@ -24,7 +24,6 @@ function PositionBuffer.Push(buffer: Buffer, timestamp: number, position: Vector
 end
 
 function PositionBuffer.Sample(buffer: Buffer, timestamp: number): Vector3?
-	-- Keep the last sample before render time and all samples after it.
 	while #buffer > 1 and buffer[2].Time <= timestamp do
 		table.remove(buffer, 1)
 	end
@@ -36,7 +35,6 @@ function PositionBuffer.Sample(buffer: Buffer, timestamp: number): Vector3?
 
 	local second = buffer[2]
 	if not second or timestamp <= first.Time then
-		-- Hold at the endpoint instead of extrapolating through turns or the base.
 		return first.Position
 	end
 
