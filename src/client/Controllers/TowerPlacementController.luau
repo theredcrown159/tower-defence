@@ -128,7 +128,7 @@ local function getValidPosition(position: Vector3): Vector3?
 		local isInsideZ = math.abs(localPosition.Z) <= halfSize.Z
 
 		if isInsideX and isInsideZ then
-			return zone.CFrame:PointToWorldSpace(Vector3.new(localPosition.X, -halfSize.Y, localPosition.Z))
+			return position
 		end
 	end
 

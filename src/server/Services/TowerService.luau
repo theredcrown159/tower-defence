@@ -1,11 +1,11 @@
 --!strict
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 
 local EconomyService = require(script.Parent.EconomyService)
 local Enemy = require(script.Parent.Parent.Domain.Enemies.Enemy)
 local EnemyService = require(script.Parent.EnemyService)
+local MapService = require(script.Parent.MapService)
 local SimulationService = require(script.Parent.SimulationService)
 local Tower = require(script.Parent.Parent.Domain.Towers.Tower)
 local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinitions)
@@ -32,28 +32,6 @@ local nextTowerId = 0
 local simulationConnection: RBXScriptConnection? = nil
 
 local MINIMUM_TOWER_DISTANCE = 4
-
-local towerZones = Workspace:WaitForChild("MapData"):WaitForChild("TowerZones")
-
-local function getValidPosition(position: Vector3): Vector3?
-	for _, zone in towerZones:GetChildren() do
-		if not zone:IsA("BasePart") then
-			continue
-		end
-
-		local localPosition = zone.CFrame:PointToObjectSpace(position)
-		local halfSize = zone.Size / 2
-
-		local isInsideX = math.abs(localPosition.X) <= halfSize.X
-		local isInsideZ = math.abs(localPosition.Z) <= halfSize.Z
-
-		if isInsideX and isInsideZ then
-			return zone.CFrame:PointToWorldSpace(Vector3.new(localPosition.X, -halfSize.Y, localPosition.Z))
-		end
-	end
-
-	return nil
-end
 
 local function isPositionFree(position: Vector3): boolean
 	for _, tower in activeTowers do
@@ -145,7 +123,7 @@ local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 	end
 end
 
-function TowerService.Place(towerName: string, position: Vector3, ownerUserId: number): number
+local function place(towerName: string, position: Vector3, ownerUserId: number): number
 	local definition = TowerDefinitions[towerName]
 
 	if not definition then
@@ -170,7 +148,7 @@ function TowerService.TryPlace(player: Player, towerName: string, requestedPosit
 		return false
 	end
 
-	local position = getValidPosition(requestedPosition)
+	local position = MapService.GetValidTowerPosition(requestedPosition)
 
 	if not position then
 		return false
@@ -184,7 +162,7 @@ function TowerService.TryPlace(player: Player, towerName: string, requestedPosit
 		return false
 	end
 
-	TowerService.Place(towerName, position, player.UserId)
+	place(towerName, position, player.UserId)
 
 	return true
 end
