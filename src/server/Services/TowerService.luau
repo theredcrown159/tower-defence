@@ -116,7 +116,7 @@ local function onSimulationStep(fixedDeltaTime: number, _gameTime: number)
 		towerAttackedEvent:Fire(towerId, targetId)
 
 		if killed then
-			EconomyService.AddMoneyToAll(enemy:GetReward())
+			EconomyService.AddMoney(tower:GetOwnerUserId(), enemy:GetReward())
 			setTarget(towerId, nil)
 		end
 	end
@@ -141,6 +141,10 @@ local function place(towerName: string, position: Vector3, ownerUserId: number):
 end
 
 function TowerService.TryPlace(player: Player, towerName: string, requestedPosition: Vector3): boolean
+	if not simulationConnection then
+		return false
+	end
+
 	local definition = TowerDefinitions[towerName]
 
 	if not definition then

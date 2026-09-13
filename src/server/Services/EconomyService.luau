@@ -48,16 +48,6 @@ function EconomyService.AddMoney(userId: number, amount: number): boolean
 	return true
 end
 
-function EconomyService.AddMoneyToAll(amount: number)
-	if amount <= 0 then
-		return
-	end
-
-	for userId in balances do
-		EconomyService.AddMoney(userId, amount)
-	end
-end
-
 function EconomyService.SpendMoney(userId: number, amount: number): boolean
 	local currentMoney = balances[userId]
 

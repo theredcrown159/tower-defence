@@ -12,29 +12,59 @@ local TowerReplicationService = require(script.Parent.Services.TowerReplicationS
 local TowerService = require(script.Parent.Services.TowerService)
 local WaveService = require(script.Parent.Services.WaveService)
 
+type MatchResult = "Victory" | "Defeat"
+
+local mapFolder = Workspace:WaitForChild("MapData", 10)
+
+if not mapFolder or not mapFolder:IsA("Folder") then
+	error("MapData folder was not found")
+end
+
+if not MapService.Load(mapFolder) then
+	error("MapData is invalid")
+end
+
 EnemyReplicationService.Start()
 TowerReplicationService.Start()
 EconomyService.Start()
-
-local mapFolder = Workspace:WaitForChild("MapData", 10)
-MapService.Load(mapFolder)
 
 EnemyService.Start()
 BaseService.Start()
 TowerService.Start()
 WaveService.Start()
 
+local matchFinished = false
+
+local function finishMatch(result: MatchResult)
+	if matchFinished then
+		return
+	end
+
+	matchFinished = true
+	print("Match finished: " .. result)
+
+	SimulationService.Stop()
+	WaveService.Stop()
+	TowerService.Stop()
+	EnemyService.Stop()
+	BaseService.Stop()
+
+	if result == "Defeat" then
+		TowerService.Clear()
+		EnemyService.Clear()
+	end
+end
+
 BaseService.HealthChanged:Connect(function(currentHealth: number, _previousHealth: number, maxHealth: number)
 	print(`Base health: {currentHealth}/{maxHealth}`)
 end)
 
 BaseService.BaseDestroyed:Connect(function()
-	print("Base destroyed")
-	WaveService.Stop()
-	TowerService.Stop()
-	TowerService.Clear()
-	EnemyService.Clear()
-	EnemyService.Stop()
+	finishMatch("Defeat")
+end)
+
+WaveService.AllWavesCompleted:Connect(function()
+	finishMatch("Victory")
 end)
 
 SimulationService.Start()
