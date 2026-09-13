@@ -10,6 +10,7 @@ local MapService = require(script.Parent.Services.MapService)
 local SimulationService = require(script.Parent.Services.SimulationService)
 local TowerReplicationService = require(script.Parent.Services.TowerReplicationService)
 local TowerService = require(script.Parent.Services.TowerService)
+local WaveReplicationService = require(script.Parent.Services.WaveReplicationService)
 local WaveService = require(script.Parent.Services.WaveService)
 
 type MatchResult = "Victory" | "Defeat"
@@ -32,6 +33,7 @@ EnemyService.Start()
 BaseService.Start()
 TowerService.Start()
 WaveService.Start()
+WaveReplicationService.Start()
 
 local matchFinished = false
 

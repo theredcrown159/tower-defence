@@ -1,5 +1,6 @@
 --!strict
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local EnemyDefinitions = require(ReplicatedStorage.Shared.Config.EnemyDefinitions)
@@ -17,6 +18,9 @@ local WaveService = {}
 local MATCH_STATE_NAME = "MatchState"
 local WAVE_ATTRIBUTE = "Wave"
 local TIME_REMAINING_ATTRIBUTE = "TimeRemaining"
+local CAN_SKIP_ATTRIBUTE = "CanSkip"
+local SKIP_VOTES_ATTRIBUTE = "SkipVotes"
+local SKIP_VOTES_REQUIRED_ATTRIBUTE = "SkipVotesRequired"
 
 local waveStartedEvent = Instance.new("BindableEvent")
 WaveService.WaveStarted = waveStartedEvent.Event
@@ -36,6 +40,7 @@ local waveTimeRemaining = 0
 local intermissionRemaining = 0
 local currentWaveEnemyIds: { [number]: boolean } = {}
 local currentWaveEnemyCount = 0
+local skipVotesByUserId: { [number]: boolean } = {}
 local simulationConnection: RBXScriptConnection? = nil
 local enemyRemovedConnection: RBXScriptConnection? = nil
 
@@ -68,6 +73,53 @@ local function replicateTimeRemaining(seconds: number)
 	if matchState:GetAttribute(TIME_REMAINING_ATTRIBUTE) ~= displayedSeconds then
 		matchState:SetAttribute(TIME_REMAINING_ATTRIBUTE, displayedSeconds)
 	end
+end
+
+local function canSkipCurrentWave(): boolean
+	return state == "WaitingForEnemies"
+		and currentWaveIndex < #WaveDefinitions
+		and waveTimeRemaining > 0
+		and waveTimeRemaining <= GameConfig.SkipVoteDuration
+end
+
+local function getRequiredSkipVotes(): number
+	return math.max(1, math.floor(#Players:GetPlayers() / 2) + 1)
+end
+
+local function getSkipVoteCount(): number
+	local count = 0
+
+	for _, player in Players:GetPlayers() do
+		if skipVotesByUserId[player.UserId] then
+			count += 1
+		end
+	end
+
+	return count
+end
+
+local function replicateSkipState()
+	local matchState = getMatchState()
+	local canSkip = canSkipCurrentWave()
+	local skipVotes = getSkipVoteCount()
+	local skipVotesRequired = getRequiredSkipVotes()
+
+	if matchState:GetAttribute(CAN_SKIP_ATTRIBUTE) ~= canSkip then
+		matchState:SetAttribute(CAN_SKIP_ATTRIBUTE, canSkip)
+	end
+
+	if matchState:GetAttribute(SKIP_VOTES_ATTRIBUTE) ~= skipVotes then
+		matchState:SetAttribute(SKIP_VOTES_ATTRIBUTE, skipVotes)
+	end
+
+	if matchState:GetAttribute(SKIP_VOTES_REQUIRED_ATTRIBUTE) ~= skipVotesRequired then
+		matchState:SetAttribute(SKIP_VOTES_REQUIRED_ATTRIBUTE, skipVotesRequired)
+	end
+end
+
+local function clearSkipVotes()
+	table.clear(skipVotesByUserId)
+	replicateSkipState()
 end
 
 local function validateDefinitions()
@@ -153,6 +205,7 @@ local function finishWave(withIntermission: boolean)
 		replicateTimeRemaining(intermissionRemaining)
 	end
 
+	clearSkipVotes()
 	waveCompletedEvent:Fire(completedWaveIndex)
 
 	if state == "Finished" then
@@ -168,6 +221,7 @@ local function advanceToNextGroup()
 		timeUntilNextSpawn = 0
 	else
 		state = "WaitingForEnemies"
+		replicateSkipState()
 	end
 end
 
@@ -215,6 +269,7 @@ local function startNextWave(): boolean
 	intermissionRemaining = 0
 	clearCurrentWaveTracking()
 	state = "Spawning"
+	clearSkipVotes()
 
 	replicateWave()
 	replicateTimeRemaining(waveTimeRemaining)
@@ -226,6 +281,7 @@ end
 local function updateActiveWave(fixedDeltaTime: number)
 	waveTimeRemaining = math.max(0, waveTimeRemaining - fixedDeltaTime)
 	replicateTimeRemaining(waveTimeRemaining)
+	replicateSkipState()
 
 	if state == "Spawning" then
 		spawnReadyEnemies(fixedDeltaTime)
@@ -286,6 +342,23 @@ function WaveService.GetIntermissionRemaining(): number
 	return intermissionRemaining
 end
 
+function WaveService.TryVoteSkip(player: Player, wantsToSkip: boolean): boolean
+	if not simulationConnection or not player:IsDescendantOf(Players) or not canSkipCurrentWave() then
+		return false
+	end
+
+	skipVotesByUserId[player.UserId] = if wantsToSkip then true else nil
+	replicateSkipState()
+
+	if getSkipVoteCount() < getRequiredSkipVotes() then
+		return true
+	end
+
+	finishWave(false)
+
+	return startNextWave()
+end
+
 function WaveService.IsRunning(): boolean
 	return simulationConnection ~= nil
 end
@@ -314,6 +387,7 @@ function WaveService.Start(): boolean
 	simulationConnection = SimulationService.Stepped:Connect(onSimulationStep)
 	replicateWave()
 	replicateTimeRemaining(0)
+	clearSkipVotes()
 
 	return true
 end
@@ -333,6 +407,7 @@ function WaveService.Stop(): boolean
 
 	state = "Stopped"
 	replicateTimeRemaining(0)
+	clearSkipVotes()
 
 	return true
 end
@@ -352,6 +427,7 @@ function WaveService.Reset(): boolean
 	state = "Stopped"
 	replicateWave()
 	replicateTimeRemaining(0)
+	clearSkipVotes()
 
 	return true
 end

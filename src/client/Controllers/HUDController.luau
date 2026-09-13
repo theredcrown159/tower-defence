@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local BaseHealthUI = require(script.Parent.HUD.BaseHealthUI)
 local EnemyCountUI = require(script.Parent.HUD.EnemyCountUI)
 local MoneyUI = require(script.Parent.HUD.MoneyUI)
+local SkipWaveUI = require(script.Parent.HUD.SkipWaveUI)
 local TimerUI = require(script.Parent.HUD.TimerUI)
 local TowerMenuUI = require(script.Parent.HUD.TowerMenuUI)
 local WaveUI = require(script.Parent.HUD.WaveUI)
@@ -58,6 +59,7 @@ function HUDController.Start(): boolean
 	TimerUI.Start(top:WaitForChild("Timer") :: TextLabel)
 	EnemyCountUI.Start(top:WaitForChild("EnemyCount") :: TextLabel)
 	BaseHealthUI.Start(hud:WaitForChild("HPbar"))
+	SkipWaveUI.Start(hud:WaitForChild("SkipWave") :: GuiObject)
 	TowerMenuUI.Start(hud:WaitForChild("UnitUpgrade") :: GuiObject)
 
 	started = true
@@ -75,6 +77,7 @@ function HUDController.Stop(): boolean
 	TimerUI.Stop()
 	EnemyCountUI.Stop()
 	BaseHealthUI.Stop()
+	SkipWaveUI.Stop()
 	TowerMenuUI.Stop()
 	started = false
 
