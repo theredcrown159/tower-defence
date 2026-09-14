@@ -1,11 +1,14 @@
 --!strict
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local GameConfig = require(ReplicatedStorage.Shared.Config.GameConfig)
+local TowerDefinitions = require(ReplicatedStorage.Shared.Config.TowerDefinitions)
+local VFXController = require(script.Parent.VFXController)
 
 local towerModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Towers")
 local towerRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Towers")
@@ -16,6 +19,7 @@ local TowerPlacementController = {}
 
 local previewModel: Model? = nil
 local previewHighlight: Highlight? = nil
+local previewRangeIndicator: Model? = nil
 local selectedTowerName: string? = nil
 local previewPosition: Vector3? = nil
 local canPlace = false
@@ -35,8 +39,13 @@ local function stopPlacement()
 		previewModel:Destroy()
 	end
 
+	if previewRangeIndicator then
+		VFXController.RemoveRangeIndicator(previewRangeIndicator)
+	end
+
 	previewModel = nil
 	previewHighlight = nil
+	previewRangeIndicator = nil
 	selectedTowerName = nil
 	previewPosition = nil
 	canPlace = false
@@ -50,6 +59,7 @@ local function preparePreview(model: Model)
 			descendant.CanCollide = false
 			descendant.CanTouch = false
 			descendant.CanQuery = false
+			descendant.CollisionGroup = GameConfig.VisualCollisionGroup
 			descendant.Transparency = math.max(descendant.Transparency, 0.35)
 		end
 	end
@@ -80,6 +90,10 @@ local function startPlacement(towerName: string)
 	previewModel = model
 	previewHighlight = highlight
 	selectedTowerName = towerName
+
+	local definition = TowerDefinitions[towerName]
+	local firstLevel = if definition then definition.Levels[1] else nil
+	previewRangeIndicator = if firstLevel then VFXController.CreateRangeIndicator(firstLevel.Range) else nil
 end
 
 local function getMousePosition(): Vector3?
@@ -99,6 +113,12 @@ local function getMousePosition(): Vector3?
 
 	if enemyVisuals then
 		table.insert(excluded, enemyVisuals)
+	end
+
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(excluded, player.Character)
+		end
 	end
 
 	table.insert(excluded, towerZones)
@@ -179,6 +199,10 @@ local function updatePreview()
 	local displayPosition = validPosition or mousePosition
 
 	previewModel:PivotTo(CFrame.new(displayPosition))
+
+	if previewRangeIndicator then
+		VFXController.SetRangeIndicatorPosition(previewRangeIndicator, displayPosition)
+	end
 
 	canPlace = validPosition ~= nil and isPositionFree(validPosition)
 	previewPosition = if canPlace then validPosition else nil

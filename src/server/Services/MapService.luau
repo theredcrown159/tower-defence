@@ -1,5 +1,6 @@
 --!strict
 
+local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
 local MapService = {}
@@ -128,6 +129,16 @@ function MapService.GetValidTowerPosition(position: Vector3): Vector3?
 	if not MapService.IsLoaded() or not towerZonesFolder then
 		return nil
 	end
+
+	local excluded: { Instance } = { towerZonesFolder }
+
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(excluded, player.Character)
+		end
+	end
+
+	groundRaycastParams.FilterDescendantsInstances = excluded
 
 	for _, zone in towerZonesFolder:GetChildren() do
 		if not zone:IsA("BasePart") then

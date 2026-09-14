@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 
 local AnimationPlayer = require(script.Parent.Parent.Util.AnimationPlayer)
 local EnemyController = require(script.Parent.EnemyController)
+local GameConfig = require(ReplicatedStorage.Shared.Config.GameConfig)
 local TowerNameUI = require(script.Parent.TowerNameUI)
 local TowerSelectionController = require(script.Parent.TowerSelectionController)
 local VFXController = require(script.Parent.VFXController)
@@ -69,6 +70,7 @@ local function prepareVisualModel(model: Model)
 			descendant.Anchored = descendant == rootPart
 			descendant.CanCollide = false
 			descendant.CanTouch = false
+			descendant.CollisionGroup = GameConfig.VisualCollisionGroup
 		end
 	end
 end

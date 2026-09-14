@@ -27,12 +27,15 @@ local upgradeButton: GuiButton? = nil
 local upgradeCostLabel: TextLabel? = nil
 local sellButton: GuiButton? = nil
 local sellAmountLabel: TextLabel? = nil
+local previousTargetModeButton: GuiButton? = nil
+local nextTargetModeButton: GuiButton? = nil
 local selectedModel: Model? = nil
 local levelChangedConnection: RBXScriptConnection? = nil
 local targetModeChangedConnection: RBXScriptConnection? = nil
 local upgradeActivatedConnection: RBXScriptConnection? = nil
 local sellActivatedConnection: RBXScriptConnection? = nil
-local targetingInputConnection: RBXScriptConnection? = nil
+local previousTargetModeActivatedConnection: RBXScriptConnection? = nil
+local nextTargetModeActivatedConnection: RBXScriptConnection? = nil
 local upgradeRequestInFlight = false
 local sellRequestInFlight = false
 local targetModeRequestInFlight = false
@@ -64,8 +67,12 @@ local function setSellEnabled(enabled: boolean)
 end
 
 local function setTargetingEnabled(enabled: boolean)
-	if targetingLabel then
-		targetingLabel.Active = enabled
+	for _, button in { previousTargetModeButton, nextTargetModeButton } do
+		if button then
+			button.Active = enabled
+			button.Interactable = enabled
+			button.AutoButtonColor = enabled
+		end
 	end
 end
 
@@ -237,7 +244,7 @@ local function requestSell()
 	end
 end
 
-local function requestNextTargetMode()
+local function requestTargetMode(offset: number)
 	local model = selectedModel
 
 	if not model or upgradeRequestInFlight or sellRequestInFlight or targetModeRequestInFlight then
@@ -275,7 +282,7 @@ local function requestNextTargetMode()
 		end
 	end
 
-	local nextTargetMode = targetModes[currentIndex % #targetModes + 1]
+	local nextTargetMode = targetModes[(currentIndex - 1 + offset) % #targetModes + 1]
 
 	targetModeRequestInFlight = true
 	update()
@@ -290,13 +297,12 @@ local function requestNextTargetMode()
 	end
 end
 
-local function onTargetingInput(input: InputObject)
-	local isPointerInput = input.UserInputType == Enum.UserInputType.MouseButton1
-		or input.UserInputType == Enum.UserInputType.Touch
+local function requestPreviousTargetMode()
+	requestTargetMode(-1)
+end
 
-	if isPointerInput then
-		requestNextTargetMode()
-	end
+local function requestNextTargetMode()
+	requestTargetMode(1)
 end
 
 function TowerMenuUI.Start(unitUpgrade: GuiObject)
@@ -304,6 +310,8 @@ function TowerMenuUI.Start(unitUpgrade: GuiObject)
 	local upgrade = unitUpgrade:WaitForChild("Upgrade") :: GuiButton
 	local sell = unitUpgrade:WaitForChild("Sell") :: GuiButton
 	local targeting = unitUpgrade:WaitForChild("Targeting") :: TextLabel
+	local left = unitUpgrade:WaitForChild("Left") :: GuiButton
+	local right = unitUpgrade:WaitForChild("Right") :: GuiButton
 
 	menu = unitUpgrade
 	titleLabel = unitUpgrade:WaitForChild("Title") :: TextLabel
@@ -319,12 +327,16 @@ function TowerMenuUI.Start(unitUpgrade: GuiObject)
 	upgradeCostLabel = upgrade:WaitForChild("Cost") :: TextLabel
 	sellButton = sell
 	sellAmountLabel = sell:WaitForChild("TextLabel") :: TextLabel
+	previousTargetModeButton = left
+	nextTargetModeButton = right
+	targeting.Active = false
 	unitUpgrade.Active = true
 	unitUpgrade.Visible = false
 
 	upgradeActivatedConnection = upgrade.Activated:Connect(requestUpgrade)
 	sellActivatedConnection = sell.Activated:Connect(requestSell)
-	targetingInputConnection = targeting.InputBegan:Connect(onTargetingInput)
+	previousTargetModeActivatedConnection = left.Activated:Connect(requestPreviousTargetMode)
+	nextTargetModeActivatedConnection = right.Activated:Connect(requestNextTargetMode)
 end
 
 function TowerMenuUI.Show(model: Model)
@@ -374,9 +386,14 @@ function TowerMenuUI.Stop()
 		sellActivatedConnection = nil
 	end
 
-	if targetingInputConnection then
-		targetingInputConnection:Disconnect()
-		targetingInputConnection = nil
+	if previousTargetModeActivatedConnection then
+		previousTargetModeActivatedConnection:Disconnect()
+		previousTargetModeActivatedConnection = nil
+	end
+
+	if nextTargetModeActivatedConnection then
+		nextTargetModeActivatedConnection:Disconnect()
+		nextTargetModeActivatedConnection = nil
 	end
 
 	menu = nil
@@ -393,6 +410,8 @@ function TowerMenuUI.Stop()
 	upgradeCostLabel = nil
 	sellButton = nil
 	sellAmountLabel = nil
+	previousTargetModeButton = nil
+	nextTargetModeButton = nil
 	upgradeRequestInFlight = false
 	sellRequestInFlight = false
 	targetModeRequestInFlight = false

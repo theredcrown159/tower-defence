@@ -12,11 +12,19 @@ local updatedEvent = enemyRemotes:WaitForChild("Updated")
 
 local enemyModels = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Enemies")
 
+local AnimationPlayer = require(script.Parent.Parent.Util.AnimationPlayer)
 local EnemyHealthUI = require(script.Parent.EnemyHealthUI)
+local GameConfig = require(ReplicatedStorage.Shared.Config.GameConfig)
 local NetworkConfig = require(ReplicatedStorage.Shared.Config.NetworkConfig)
 local PositionBuffer = require(script.Parent.Parent.Util.PositionBuffer)
 
 local EnemyController = {}
+
+local WEAPON_POSE_ANIMATION_IDS: { [string]: string } = {
+	Bat_1 = "79652240673281",
+	Bat_2 = "79652240673281",
+	Shotgun = "100245420308730",
+}
 
 type EnemyPositionSnapshot = {
 	Id: number,
@@ -35,14 +43,24 @@ type DeathAnimation = {
 }
 
 local enemies: { [number]: Model } = {}
+local movementTracks: { [number]: AnimationTrack } = {}
+local weaponPoseTracks: { [number]: AnimationTrack } = {}
 local positionBuffers: { [number]: PositionBuffer.Buffer } = {}
 local deathAnimations: { [number]: DeathAnimation } = {}
 local connections: { RBXScriptConnection } = {}
 local started = false
 
 local DEATH_DURATION = 0.25
+local WALK_ANIMATION_ID = "121341414773900"
 local TURN_SPEED = 12
 local MIN_DIRECTION_MAGNITUDE = 0.001
+
+local function stopAnimations(id: number)
+	AnimationPlayer.Stop(movementTracks[id])
+	AnimationPlayer.Stop(weaponPoseTracks[id])
+	movementTracks[id] = nil
+	weaponPoseTracks[id] = nil
+end
 
 local function getVisualsFolder(): Folder
 	local existing = Workspace:FindFirstChild("EnemyVisuals")
@@ -62,10 +80,30 @@ local function getVisualsFolder(): Folder
 	return folder
 end
 
+local function prepareVisualModel(model: Model)
+	local rootPart = model:FindFirstChild("HumanoidRootPart", true)
+
+	if not rootPart or not rootPart:IsA("BasePart") then
+		rootPart = model.PrimaryPart
+	end
+
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = descendant == rootPart
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+			descendant.CollisionGroup = GameConfig.VisualCollisionGroup
+		end
+	end
+end
+
 local function destroyEnemyVisual(id: number)
 	EnemyHealthUI.Remove(id)
 
 	local model = enemies[id]
+
+	stopAnimations(id)
 
 	if model then
 		model:Destroy()
@@ -121,6 +159,7 @@ local function onEnemySpawned(
 	destroyEnemyVisual(id)
 
 	local model = template:Clone()
+	prepareVisualModel(model)
 	model:PivotTo(CFrame.new(position))
 	model.Parent = getVisualsFolder()
 	EnemyHealthUI.Create(id, model, modelName, health, maxHealth)
@@ -129,6 +168,22 @@ local function onEnemySpawned(
 	PositionBuffer.Push(buffer, timestamp, position)
 	positionBuffers[id] = buffer
 	enemies[id] = model
+
+	local movementTrack = AnimationPlayer.Play(model, WALK_ANIMATION_ID, true, Enum.AnimationPriority.Movement)
+
+	if movementTrack then
+		movementTracks[id] = movementTrack
+	end
+
+	local weaponPoseAnimationId = WEAPON_POSE_ANIMATION_IDS[modelName]
+
+	if weaponPoseAnimationId then
+		local weaponPoseTrack = AnimationPlayer.Play(model, weaponPoseAnimationId, true, Enum.AnimationPriority.Action)
+
+		if weaponPoseTrack then
+			weaponPoseTracks[id] = weaponPoseTrack
+		end
+	end
 end
 
 local function onEnemyRemoved(id: number, reason: string)

@@ -1,5 +1,6 @@
 --!strict
 
+local RangeIndicator = require(script.Parent.Parent.VFX.RangeIndicator)
 local WebAttack = require(script.Parent.Parent.VFX.WebAttack)
 
 local VFXController = {}
@@ -12,6 +13,26 @@ function VFXController.PlayWebAttack(origin: BasePart, target: BasePart, gameSpe
 	end
 
 	WebAttack.Play(origin, target, gameSpeed)
+end
+
+function VFXController.CreateRangeIndicator(range: number): Model?
+	if not started then
+		return nil
+	end
+
+	return RangeIndicator.Create(range)
+end
+
+function VFXController.SetRangeIndicatorPosition(indicator: Model, position: Vector3)
+	if not started then
+		return
+	end
+
+	RangeIndicator.SetPosition(indicator, position)
+end
+
+function VFXController.RemoveRangeIndicator(indicator: Model)
+	RangeIndicator.Remove(indicator)
 end
 
 function VFXController.Start(): boolean
@@ -30,6 +51,7 @@ function VFXController.Stop(): boolean
 
 	started = false
 	WebAttack.Clear()
+	RangeIndicator.Clear()
 	return true
 end
 

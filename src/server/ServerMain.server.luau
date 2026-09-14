@@ -1,11 +1,14 @@
 --!strict
 
+local PhysicsService = game:GetService("PhysicsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local BaseService = require(script.Parent.Services.BaseService)
 local EconomyService = require(script.Parent.Services.EconomyService)
 local EnemyReplicationService = require(script.Parent.Services.EnemyReplicationService)
 local EnemyService = require(script.Parent.Services.EnemyService)
+local GameConfig = require(ReplicatedStorage.Shared.Config.GameConfig)
 local GameSpeedReplicationService = require(script.Parent.Services.GameSpeedReplicationService)
 local MapService = require(script.Parent.Services.MapService)
 local SimulationService = require(script.Parent.Services.SimulationService)
@@ -15,6 +18,13 @@ local WaveReplicationService = require(script.Parent.Services.WaveReplicationSer
 local WaveService = require(script.Parent.Services.WaveService)
 
 type MatchResult = "Victory" | "Defeat"
+
+if not PhysicsService:IsCollisionGroupRegistered(GameConfig.VisualCollisionGroup) then
+	PhysicsService:RegisterCollisionGroup(GameConfig.VisualCollisionGroup)
+end
+
+PhysicsService:CollisionGroupSetCollidable(GameConfig.VisualCollisionGroup, "Default", false)
+PhysicsService:CollisionGroupSetCollidable(GameConfig.VisualCollisionGroup, GameConfig.VisualCollisionGroup, false)
 
 local mapFolder = Workspace:WaitForChild("MapData", 10)
 

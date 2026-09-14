@@ -9,5 +9,6 @@ return {
 	WaveIntermissionDuration = 10,
 	SkipVoteDuration = 20,
 	MinimumTowerDistance = 4,
+	VisualCollisionGroup = "Visuals",
 	TowerSellRefundRate = 0.5,
 }
