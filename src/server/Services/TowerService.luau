@@ -118,6 +118,25 @@ local function setTarget(towerId: number, targetId: number?)
 	towerTargetChangedEvent:Fire(towerId, targetId or 0)
 end
 
+local function findNextAttackTarget(
+	towerId: number,
+	tower: TowerType,
+	attack: ActiveAttack,
+	enemies: { [number]: Enemy.Enemy }
+): Enemy.Enemy?
+	local currentEnemy = enemies[attack.TargetId]
+
+	if currentEnemy and not currentEnemy:IsDead() and not currentEnemy:HasReachedBase() then
+		return currentEnemy
+	end
+
+	local nextTargetId = findTarget(tower, enemies)
+	attack.TargetId = nextTargetId or 0
+	setTarget(towerId, nextTargetId)
+
+	return if nextTargetId then enemies[nextTargetId] else nil
+end
+
 local function updateAttack(
 	towerId: number,
 	tower: TowerType,
@@ -128,19 +147,16 @@ local function updateAttack(
 	attack.Elapsed += fixedDeltaTime
 
 	local hitTimes = tower:GetAttackHitTimes()
+	local enemy = findNextAttackTarget(towerId, tower, attack, enemies)
 
 	while attack.NextHitIndex <= #hitTimes and attack.Elapsed >= hitTimes[attack.NextHitIndex] do
-		local enemy = enemies[attack.TargetId]
-
-		if enemy and not enemy:IsDead() and not enemy:HasReachedBase() then
+		if enemy then
 			local killed = EnemyService.DamageEnemy(attack.TargetId, attack.DamagePerHit)
 
 			if killed then
 				EconomyService.AddMoney(tower:GetOwnerUserId(), enemy:GetReward())
-				setTarget(towerId, nil)
+				enemy = findNextAttackTarget(towerId, tower, attack, enemies)
 			end
-		else
-			setTarget(towerId, nil)
 		end
 
 		attack.NextHitIndex += 1

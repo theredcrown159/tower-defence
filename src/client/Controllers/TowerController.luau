@@ -98,7 +98,7 @@ local function faceTarget(model: Model, targetPosition: Vector3, deltaTime: numb
 	model:PivotTo(pivot:Lerp(targetCFrame, alpha))
 end
 
-local function showAttackHit(towerId: number)
+local function showAttackHit(towerId: number, handName: string)
 	local targetId = attackCycleTargets[towerId]
 	local towerModel = towers[towerId]
 
@@ -119,7 +119,9 @@ local function showAttackHit(towerId: number)
 		return
 	end
 
-	VFXController.PlayWebAttack(towerRootPart, enemyRootPart, gameSpeedValue.Value)
+	local hand = towerModel:FindFirstChild(handName)
+	local origin = if hand and hand:IsA("BasePart") then hand else towerRootPart
+	VFXController.PlayWebAttack(origin, enemyRootPart, gameSpeedValue.Value)
 end
 
 local function clearAttackTrack(towerId: number)
@@ -149,11 +151,14 @@ local function loadAttackTrack(towerId: number, model: Model)
 		return
 	end
 
+	local hitIndex = 0
 	attackTracks[towerId] = attackTrack
 	attackMarkerConnections[towerId] = attackTrack:GetMarkerReachedSignal("hit"):Connect(function()
-		showAttackHit(towerId)
+		hitIndex += 1
+		showAttackHit(towerId, if hitIndex % 2 == 1 then "RightHand" else "LeftHand")
 	end)
 	attackStoppedConnections[towerId] = attackTrack.Stopped:Connect(function()
+		hitIndex = 0
 		if attackTracks[towerId] == attackTrack then
 			attackCycleTargets[towerId] = nil
 		end
@@ -257,6 +262,12 @@ local function onTowerPacket(packet: TowerPacket)
 			towerTargets[packet.TowerId] = nil
 		else
 			towerTargets[packet.TowerId] = packet.TargetId
+		end
+
+		local attackTrack = attackTracks[packet.TowerId]
+
+		if attackTrack and attackTrack.IsPlaying then
+			attackCycleTargets[packet.TowerId] = if packet.TargetId == 0 then nil else packet.TargetId
 		end
 
 		return
